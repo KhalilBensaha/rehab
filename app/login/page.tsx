@@ -2,8 +2,9 @@
 
 import type React from "react"
 import { useRouter } from "next/navigation" // Import router here
-
+import TestSupabase from "../test"
 import { useState } from "react"
+import { login, getUserRole } from "@/lib/auth"
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,28 +16,36 @@ import { translations } from "@/lib/i18n"
 import { LanguageSwitcher } from "@/components/language-switcher"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("") // Static for prototype
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
   const { admins, setCurrentUser, locale } = useStore()
   const t = translations[locale || "en"]
   const dir = t.dir
   const router = useRouter() // Declare router here
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // Simple prototype auth
-    const user = admins.find((a) => a.email === email)
-    if (user) {
-      setCurrentUser(user)
-      toast({ title: t.login.welcome, description: `Logged in as ${user.name}` })
-      router.push("/dashboard")
-    } else {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { data, error } = await login(username, password);
+      if (error || !data.user) {
+        toast({
+          variant: "destructive",
+          title: t.login.failed,
+          description: error?.message || t.login.userNotFound,
+        });
+        return;
+      }
+      // Fetch user role
+      const role = await getUserRole(data.user.id);
+      setCurrentUser({ id: data.user.id, username, role });
+      toast({ title: t.login.welcome, description: `Logged in as ${username}` });
+      router.push("/dashboard");
+    } catch (err: any) {
       toast({
         variant: "destructive",
         title: t.login.failed,
-        description: t.login.userNotFound,
-      })
+        description: err.message || t.login.userNotFound,
+      });
     }
   }
 
@@ -56,15 +65,15 @@ export default function LoginPage() {
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email" className={dir === "rtl" ? "text-right block" : ""}>
-                {t.login.email}
+              <Label htmlFor="username" className={dir === "rtl" ? "text-right block" : ""}>
+                Username
               </Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="admin@rehab.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username"
+                type="text"
+                placeholder="admin"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
                 className={dir === "rtl" ? "text-right" : ""}
               />
@@ -77,6 +86,8 @@ export default function LoginPage() {
                 id="password"
                 type="password"
                 placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required
                 className={dir === "rtl" ? "text-right" : ""}
               />
@@ -90,6 +101,7 @@ export default function LoginPage() {
         </form>
       </Card>
       <Toaster />
+       <TestSupabase /> 
     </div>
   )
 }
