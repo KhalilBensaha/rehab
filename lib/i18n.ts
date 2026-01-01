@@ -191,6 +191,10 @@ export const translations = {
       },
       empty: "No delivered products yet.",
       emptyFiltered: "No delivered products for this company yet.",
+      resetButton: "Reset Data",
+      resetTitle: "Reset Treasure Data",
+      resetDescription: "This will delete all products and clear totals. This cannot be undone.",
+      resetConfirm: "Delete all",
     },
   },
   fr: {
@@ -379,6 +383,10 @@ export const translations = {
       },
       empty: "Aucun produit livré pour l'instant.",
       emptyFiltered: "Aucun produit livré pour cette entreprise.",
+      resetButton: "Réinitialiser les données",
+      resetTitle: "Réinitialiser la trésorerie",
+      resetDescription: "Cette action supprime tous les produits et remet les totaux à zéro. Action irréversible.",
+      resetConfirm: "Tout supprimer",
     },
   },
   ar: {
@@ -567,6 +575,10 @@ export const translations = {
       },
       empty: "لا توجد منتجات مسلّمة بعد.",
       emptyFiltered: "لا توجد منتجات مسلّمة لهذه الشركة.",
+      resetButton: "إعادة تعيين البيانات",
+      resetTitle: "إعادة تعيين الخزينة",
+      resetDescription: "سيتم حذف جميع المنتجات وتصفير الإجماليات. هذا الإجراء غير قابل للتراجع.",
+      resetConfirm: "حذف الكل",
     },
   },
 }

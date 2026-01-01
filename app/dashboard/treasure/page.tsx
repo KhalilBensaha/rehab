@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useStore } from "@/lib/store"
 import { isSuperRole } from "@/lib/utils"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -11,27 +11,18 @@ import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Filter } from "lucide-react"
 import { useTranslations } from "@/lib/i18n"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 export default function TreasurePage() {
   const { t } = useTranslations()
-  const { products, companies, workers, currentUser } = useStore()
-
-  if (!isSuperRole(currentUser?.role)) {
-    return (
-      <DashboardLayout>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("adminsSection.accessDenied")}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-muted-foreground">{t("adminsSection.cannotRemoveOwnAccess")}</CardContent>
-        </Card>
-      </DashboardLayout>
-    )
-  }
-
-  const delivered = products.filter((p) => p.status === "delivered")
+  const { products, companies, workers, currentUser, setProducts } = useStore()
 
   const [filterCompany, setFilterCompany] = useState<string>("all")
+  const [isResetOpen, setIsResetOpen] = useState(false)
+  const [isPending, startTransition] = useTransition()
+
+  const delivered = products.filter((p) => p.status === "delivered")
 
   const filteredDelivered = useMemo(() => {
     if (filterCompany === "all") return delivered
@@ -55,13 +46,48 @@ export default function TreasurePage() {
     )
   }, [companies, filteredDelivered, workers])
 
+  const handleReset = () => {
+    startTransition(async () => {
+      try {
+        const res = await fetch("/api/treasure/reset", { method: "DELETE" })
+        if (res.ok) {
+          setProducts([])
+          setIsResetOpen(false)
+        } else {
+          const body = await res.json().catch(() => ({}))
+          console.error("Reset treasure failed", body)
+        }
+      } catch (err) {
+        console.error("Reset treasure error", err)
+      }
+    })
+  }
+
+  if (!isSuperRole(currentUser?.role)) {
+    return (
+      <DashboardLayout>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("adminsSection.accessDenied")}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-muted-foreground">{t("adminsSection.cannotRemoveOwnAccess")}</CardContent>
+        </Card>
+      </DashboardLayout>
+    )
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">{t("treasure.title")}</h1>
-        <p className="text-muted-foreground">{t("treasure.subtitle")}</p>
-      </div>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold">{t("treasure.title")}</h1>
+            <p className="text-muted-foreground">{t("treasure.subtitle")}</p>
+          </div>
+          <Button variant="destructive" onClick={() => setIsResetOpen(true)}>
+            {t("treasure.resetButton")}
+          </Button>
+        </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
@@ -162,6 +188,25 @@ export default function TreasurePage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("treasure.resetTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("treasure.resetDescription")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsResetOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={handleReset} disabled={isPending}>
+              {isPending ? t("common.loading") || "Resetting..." : t("treasure.resetConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </DashboardLayout>
   )
