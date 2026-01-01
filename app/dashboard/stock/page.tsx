@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Search, Filter } from "lucide-react"
 
 function StockContent() {
-  const { currentUser, locale } = useStore()
+  const { currentUser, locale, setProducts: setStoreProducts } = useStore()
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [search, setSearch] = useState("")
@@ -35,6 +35,21 @@ function StockContent() {
 
   const t = translations[locale || "en"]
 
+  const STATUS_LABELS: Record<ProductStatus, string> = {
+    in_stock: t.stock.status.inStock,
+    delivery: t.stock.status.delivery,
+    delivered: t.stock.status.delivered,
+    canceled: t.stock.status.canceled,
+  }
+
+  const normalizeStatus = (status: string): ProductStatus => {
+    if (status === "in stock") return "in_stock"
+    if (status === "in_stock" || status === "delivery" || status === "delivered" || status === "canceled") {
+      return status as ProductStatus
+    }
+    return "in_stock"
+  }
+
   useEffect(() => {
     const load = async () => {
       const [{ data: p }, companiesRes] = await Promise.all([
@@ -44,7 +59,20 @@ function StockContent() {
           .order("created_at", { ascending: false }),
         fetch("/api/companies/list"),
       ])
-      if (p) setProducts(p)
+      if (p) {
+        setProducts(p)
+        setStoreProducts(
+          p.map((prod) => ({
+            id: String(prod.id),
+            clientName: prod.client_name,
+            companyName: prod.company_id ? String(prod.company_id) : "-",
+            phone: prod.phone,
+            price: Number(prod.price || 0),
+            status: normalizeStatus(prod.status),
+            workerId: prod.delivery_worker_id ? String(prod.delivery_worker_id) : undefined,
+          })),
+        )
+      }
 
       let companiesData: any[] | undefined
       try {
@@ -72,6 +100,34 @@ function StockContent() {
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     const customId = newProduct.productId.trim() || null
+    const payload = {
+      id: customId || undefined,
+      clientName: newProduct.clientName,
+      phone: newProduct.phone,
+      price: newProduct.price,
+      companyId: newProduct.companyId || null,
+    }
+
+    try {
+      const res = await fetch("/api/products/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const body = await res.json()
+        if (body.product) {
+          setProducts((prev) => [body.product, ...prev])
+          setIsAddOpen(false)
+          setNewProduct({ productId: "", clientName: "", companyId: "", phone: "", price: 0 })
+          return
+        }
+      }
+    } catch (err) {
+      console.error("Create product API failed", err)
+    }
+
     const { data, error } = await supabase
       .from("products")
       .insert({
@@ -79,7 +135,7 @@ function StockContent() {
         client_name: newProduct.clientName,
         phone: newProduct.phone,
         price: newProduct.price,
-        status: "in stock",
+        status: "in_stock",
         company_id: newProduct.companyId || null,
       })
       .select()
@@ -88,6 +144,8 @@ function StockContent() {
       setProducts((prev) => [data, ...prev])
       setIsAddOpen(false)
       setNewProduct({ productId: "", clientName: "", companyId: "", phone: "", price: 0 })
+    } else if (error) {
+      console.error("Create product failed", error)
     }
   }
 
@@ -186,7 +244,10 @@ function StockContent() {
                       type="number"
                       required
                       value={newProduct.price}
-                      onChange={(e) => setNewProduct({ ...newProduct, price: Number.parseFloat(e.target.value) })}
+                      onChange={(e) => {
+                        const val = Number.parseFloat(e.target.value)
+                        setNewProduct({ ...newProduct, price: Number.isFinite(val) ? val : 0 })
+                      }}
                     />
                   </div>
                 </div>
@@ -252,33 +313,30 @@ function StockContent() {
                     <TableCell>
                       <Badge
                         variant={
-                          p.status === "delivered"
+                          normalizeStatus(p.status) === "delivered"
                             ? "secondary"
-                            : p.status === "canceled"
+                            : normalizeStatus(p.status) === "canceled"
                               ? "destructive"
-                              : p.status === "delivery"
+                              : normalizeStatus(p.status) === "delivery"
                                 ? "outline"
                                 : "default"
                         }
                         className="capitalize"
                       >
-                        {p.status === "in stock"
-                          ? t.stock.status.inStock
-                          : p.status === "delivery"
-                            ? t.stock.status.delivery
-                            : p.status === "delivered"
-                              ? t.stock.status.delivered
-                              : t.stock.status.canceled}
+                        {STATUS_LABELS[normalizeStatus(p.status)]}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Select value={p.status} onValueChange={(val) => handleStatusChange(p.id, val as ProductStatus)}>
+                        <Select
+                          value={normalizeStatus(p.status)}
+                          onValueChange={(val) => handleStatusChange(p.id, normalizeStatus(val))}
+                        >
                           <SelectTrigger className="w-[130px] h-8">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="in stock">{t.stock.status.inStock}</SelectItem>
+                            <SelectItem value="in_stock">{t.stock.status.inStock}</SelectItem>
                             <SelectItem value="delivery">{t.stock.status.delivery}</SelectItem>
                             <SelectItem value="delivered">{t.stock.status.delivered}</SelectItem>
                             <SelectItem value="canceled">{t.stock.status.canceled}</SelectItem>

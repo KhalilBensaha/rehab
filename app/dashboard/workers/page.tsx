@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
+import { useStore } from "@/lib/store"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,6 +18,7 @@ import { toast } from "@/hooks/use-toast"
 export default function WorkersPage() {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [workers, setWorkers] = useState<Array<any>>([])
+  const { setWorkers: setStoreWorkers } = useStore()
   const [loading, setLoading] = useState(false)
 
   const [newWorker, setNewWorker] = useState({
@@ -42,6 +44,16 @@ export default function WorkersPage() {
         .order("created_at", { ascending: false })
       if (!error && data) {
         setWorkers(data)
+        setStoreWorkers(
+          data.map((w) => ({
+            id: String(w.id),
+            name: w.name,
+            phone: w.phone,
+            profilePic: w.profile_image_url || "",
+            certificates: w.certificate_image_url || "",
+            commission: Number(w.product_fee || 0),
+          })),
+        )
       }
       setLoading(false)
     }

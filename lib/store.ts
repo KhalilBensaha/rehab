@@ -3,7 +3,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { Locale } from "./i18n"
 
-export type ProductStatus = "in stock" | "delivery" | "delivered" | "canceled"
+export type ProductStatus = "in_stock" | "delivery" | "delivered" | "canceled"
 
 export interface Company {
   id: string
@@ -42,6 +42,8 @@ interface RehabState {
   companies: Company[]
   products: Product[]
   workers: Worker[]
+  setProducts: (products: Product[]) => void
+  setWorkers: (workers: Worker[]) => void
   currentUser: Admin | null
   setCurrentUser: (user: Admin | null) => void
   addAdmin: (admin: Admin) => void
@@ -65,6 +67,8 @@ export const useStore = create<RehabState>()(
       companies: [],
       products: [],
       workers: [],
+      setProducts: (products) => set({ products }),
+      setWorkers: (workers) => set({ workers }),
       currentUser: null,
       setCurrentUser: (user) => set({ currentUser: user }),
       addAdmin: (admin) => set((state) => ({ admins: [...state.admins, admin] })),
@@ -87,7 +91,7 @@ export const useStore = create<RehabState>()(
       detachProduct: (productId) =>
         set((state) => ({
           products: state.products.map((p) =>
-            p.id === productId ? { ...p, workerId: undefined, status: "in stock" } : p,
+            p.id === productId ? { ...p, workerId: undefined, status: "in_stock" } : p,
           ),
         })),
       addWorker: (worker) => set((state) => ({ workers: [...state.workers, worker] })),
