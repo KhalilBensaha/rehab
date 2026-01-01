@@ -4,6 +4,7 @@ import type React from "react"
 import { useEffect, useState, Suspense } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { useStore, type ProductStatus } from "@/lib/store"
+import { translations } from "@/lib/i18n"
 import { isSuperRole } from "@/lib/utils"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
@@ -16,7 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Search, Filter } from "lucide-react"
 
 function StockContent() {
-  const { currentUser } = useStore()
+  const { currentUser, locale } = useStore()
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [search, setSearch] = useState("")
@@ -25,11 +26,14 @@ function StockContent() {
   const [companies, setCompanies] = useState<any[]>([])
 
   const [newProduct, setNewProduct] = useState({
+    productId: "",
     clientName: "",
     companyId: "",
     phone: "",
     price: 0,
   })
+
+  const t = translations[locale || "en"]
 
   useEffect(() => {
     const load = async () => {
@@ -45,9 +49,11 @@ function StockContent() {
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
+    const customId = newProduct.productId.trim() || null
     const { data, error } = await supabase
       .from("products")
       .insert({
+        ...(customId ? { id: customId } : {}),
         client_name: newProduct.clientName,
         phone: newProduct.phone,
         price: newProduct.price,
@@ -59,7 +65,7 @@ function StockContent() {
     if (!error && data) {
       setProducts((prev) => [data, ...prev])
       setIsAddOpen(false)
-      setNewProduct({ clientName: "", companyId: "", phone: "", price: 0 })
+      setNewProduct({ productId: "", clientName: "", companyId: "", phone: "", price: 0 })
     }
   }
 
@@ -87,22 +93,38 @@ function StockContent() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Stock Management</h1>
-            <p className="text-muted-foreground">Manage and track your products inventory.</p>
+            <h1 className="text-2xl font-bold">{t.stock.title}</h1>
+            <p className="text-muted-foreground">{t.stock.subtitle}</p>
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
-                <Plus className="h-4 w-4" /> Add Product
+                <Plus className="h-4 w-4" /> {t.stock.add}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add New Product</DialogTitle>
+                <DialogTitle>{t.stock.dialogTitle}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleAddProduct} className="space-y-4 pt-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="client">Client Name</Label>
+                  <Label htmlFor="productId">{t.common.id} ({t.common.optional || "optional"})</Label>
+                  <Input
+                    id="productId"
+                    type="text"
+                    value={newProduct.productId}
+                    onChange={(e) => setNewProduct({ ...newProduct, productId: e.target.value })}
+                    placeholder={t.stock.idPlaceholder || "Auto-assigned if left blank (letters or numbers allowed)"}
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    inputMode="text"
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="client">{t.stock.client}</Label>
                   <Input
                     id="client"
                     required
@@ -111,10 +133,10 @@ function StockContent() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Company</Label>
+                  <Label>{t.stock.company}</Label>
                   <Select required onValueChange={(val) => setNewProduct({ ...newProduct, companyId: val })}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select company" />
+                      <SelectValue placeholder={t.stock.company} />
                     </SelectTrigger>
                     <SelectContent>
                       {companies.map((c) => (
@@ -127,7 +149,7 @@ function StockContent() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="phone">Phone Number</Label>
+                    <Label htmlFor="phone">{t.stock.phone}</Label>
                     <Input
                       id="phone"
                       required
@@ -136,7 +158,7 @@ function StockContent() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="price">Price ($)</Label>
+                    <Label htmlFor="price">{t.stock.price}</Label>
                     <Input
                       id="price"
                       type="number"
@@ -147,7 +169,7 @@ function StockContent() {
                   </div>
                 </div>
                 <Button type="submit" className="w-full mt-4">
-                  Create Product
+                  {t.stock.submit}
                 </Button>
               </form>
             </DialogContent>
@@ -158,7 +180,7 @@ function StockContent() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by client or ID..."
+              placeholder={t.stock.search}
               className="pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -168,10 +190,10 @@ function StockContent() {
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={filterCompany} onValueChange={setFilterCompany}>
               <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All Companies" />
+                <SelectValue placeholder={t.stock.filterAll} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Companies</SelectItem>
+                <SelectItem value="all">{t.stock.filterAll}</SelectItem>
                 {companies.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>
                     {c.name}
@@ -186,12 +208,12 @@ function StockContent() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{t.stock.table.id}</TableHead>
+                <TableHead>{t.stock.table.client}</TableHead>
+                <TableHead>{t.stock.table.company}</TableHead>
+                <TableHead>{t.stock.table.price}</TableHead>
+                <TableHead>{t.stock.table.status}</TableHead>
+                <TableHead className="text-right">{t.stock.table.actions}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -204,7 +226,7 @@ function StockContent() {
                       <div className="text-xs text-muted-foreground">{p.phone}</div>
                     </TableCell>
                     <TableCell>{companies.find((c) => c.id === p.company_id)?.name || "-"}</TableCell>
-                    <TableCell>${Number(p.price || 0).toFixed(2)}</TableCell>
+                    <TableCell>{Number(p.price || 0).toFixed(2)} {t.common.currency}</TableCell>
                     <TableCell>
                       <Badge
                         variant={
@@ -218,7 +240,13 @@ function StockContent() {
                         }
                         className="capitalize"
                       >
-                        {p.status}
+                        {p.status === "in stock"
+                          ? t.stock.status.inStock
+                          : p.status === "delivery"
+                            ? t.stock.status.delivery
+                            : p.status === "delivered"
+                              ? t.stock.status.delivered
+                              : t.stock.status.canceled}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
@@ -228,10 +256,10 @@ function StockContent() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="in stock">In Stock</SelectItem>
-                            <SelectItem value="delivery">Delivery</SelectItem>
-                            <SelectItem value="delivered">Delivered</SelectItem>
-                            <SelectItem value="canceled">Canceled</SelectItem>
+                            <SelectItem value="in stock">{t.stock.status.inStock}</SelectItem>
+                            <SelectItem value="delivery">{t.stock.status.delivery}</SelectItem>
+                            <SelectItem value="delivered">{t.stock.status.delivered}</SelectItem>
+                            <SelectItem value="canceled">{t.stock.status.canceled}</SelectItem>
                           </SelectContent>
                         </Select>
                         <Button
@@ -240,7 +268,7 @@ function StockContent() {
                           disabled={!canDelete}
                           onClick={() => handleDeleteProduct(p.id)}
                         >
-                          Delete
+                          {t.common.delete}
                         </Button>
                       </div>
                     </TableCell>
@@ -249,7 +277,7 @@ function StockContent() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={6} className="h-24 text-center">
-                    No products found in stock.
+                    {t.stock.empty}
                   </TableCell>
                 </TableRow>
               )}

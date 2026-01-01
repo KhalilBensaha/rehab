@@ -15,6 +15,7 @@ export const translations = {
       delete: "Delete",
       edit: "Edit",
       id: "ID",
+      optional: "optional",
     },
     login: {
       title: "REHAB Login",
@@ -89,6 +90,7 @@ export const translations = {
         status: "Status",
         actions: "Actions",
       },
+      idPlaceholder: "Scan or type ID (auto-assigned if blank)",
       status: {
         inStock: "In Stock",
         delivery: "Delivery",
@@ -201,6 +203,7 @@ export const translations = {
       delete: "Supprimer",
       edit: "Modifier",
       id: "ID",
+      optional: "optionnel",
     },
     login: {
       title: "Connexion REHAB",
@@ -275,6 +278,7 @@ export const translations = {
         status: "Statut",
         actions: "Actions",
       },
+      idPlaceholder: "Scannez ou saisissez l'ID (automatique si vide)",
       status: {
         inStock: "En stock",
         delivery: "En livraison",
@@ -387,6 +391,7 @@ export const translations = {
       delete: "حذف",
       edit: "تعديل",
       id: "المعرف",
+      optional: "اختياري",
     },
     login: {
       title: "تسجيل الدخول REHAB",
@@ -461,6 +466,7 @@ export const translations = {
         status: "الحالة",
         actions: "إجراءات",
       },
+      idPlaceholder: "امسح أو اكتب المعرف (يُعيّن تلقائياً إذا تُرك فارغاً)",
       status: {
         inStock: "في المخزون",
         delivery: "قيد التوصيل",

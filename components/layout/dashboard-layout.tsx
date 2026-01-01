@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useStore } from "@/lib/store"
-import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus, PiggyBank } from "lucide-react"
+import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus, PiggyBank, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn, isSuperRole } from "@/lib/utils"
 import { translations } from "@/lib/i18n"
@@ -16,6 +16,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   useEffect(() => {
     setMounted(true)
@@ -50,10 +51,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <aside
         dir={dir}
         className={cn(
-          "w-64 border-r bg-card flex flex-col",
+          "bg-card flex flex-col transition-all duration-300 overflow-hidden",
+          sidebarOpen ? "w-64" : "w-0",
           dir === "rtl" ? "border-l border-r-0" : "border-r",
           dir === "rtl" && "items-end text-right",
         )}
+        aria-hidden={!sidebarOpen}
       >
         <div className={cn("p-6 w-full", dir === "rtl" && "text-right")}>
           <div
@@ -124,6 +127,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <div
             className={cn("flex items-center gap-2 text-sm text-muted-foreground", dir === "rtl" && "flex-row-reverse")}
           >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mr-2"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              aria-label="Toggle sidebar"
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
             <span>{t.nav.dashboard}</span>
             <ChevronRight className={cn("h-3 w-3", dir === "rtl" && "rotate-180")} />
             <span className="text-foreground font-medium capitalize">
