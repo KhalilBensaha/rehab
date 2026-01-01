@@ -1,18 +1,44 @@
 "use client"
 
-import { useStore } from "@/lib/store"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabaseClient"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Package, Truck, Building2, Users } from "lucide-react"
 
 export default function OverviewPage() {
-  const { products, workers, companies, admins } = useStore()
+  const router = useRouter()
+  const [products, setProducts] = useState<any[]>([])
+  const [workers, setWorkers] = useState<any[]>([])
+  const [companies, setCompanies] = useState<any[]>([])
+  const [admins, setAdmins] = useState<any[]>([])
+
+  useEffect(() => {
+    const load = async () => {
+      const [{ data: p }, { data: w }, { data: c }] = await Promise.all([
+        supabase.from("products").select("*").limit(1000),
+        supabase.from("delivery_workers").select("*").limit(1000),
+        supabase.from("companies").select("*").limit(1000),
+      ])
+      if (p) setProducts(p)
+      if (w) setWorkers(w)
+      if (c) setCompanies(c)
+
+      const res = await fetch("/api/admins/list")
+      if (res.ok) {
+        const body = await res.json()
+        setAdmins(body.admins || [])
+      }
+    }
+    load()
+  }, [])
 
   const stats = [
-    { name: "Total Products", value: products.length, icon: Package, color: "text-blue-500" },
-    { name: "Active Workers", value: workers.length, icon: Truck, color: "text-rehab-dark" },
-    { name: "Partner Companies", value: companies.length, icon: Building2, color: "text-orange-500" },
-    { name: "Total Admins", value: admins.length, icon: Users, color: "text-purple-500" },
+    { name: "Total Products", value: products.length, icon: Package, color: "text-blue-500", href: "/dashboard/stock" },
+    { name: "Active Workers", value: workers.length, icon: Truck, color: "text-rehab-dark", href: "/dashboard/workers" },
+    { name: "Partner Companies", value: companies.length, icon: Building2, color: "text-orange-500", href: "/dashboard/companies" },
+    { name: "Total Admins", value: admins.length, icon: Users, color: "text-purple-500", href: "/dashboard/admins" },
   ]
 
   return (
@@ -25,7 +51,7 @@ export default function OverviewPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {stats.map((stat) => (
-            <Card key={stat.name}>
+            <Card key={stat.name} className="cursor-pointer hover:shadow-md transition" onClick={() => router.push(stat.href)}>
               <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
                 <CardTitle className="text-sm font-medium">{stat.name}</CardTitle>
                 <stat.icon className={`h-4 w-4 ${stat.color}`} />

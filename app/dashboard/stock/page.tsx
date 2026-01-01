@@ -1,8 +1,10 @@
 "use client"
 
 import type React from "react"
-import { useState, Suspense } from "react"
+import { useEffect, useState, Suspense } from "react"
+import { supabase } from "@/lib/supabaseClient"
 import { useStore, type ProductStatus } from "@/lib/store"
+import { isSuperRole } from "@/lib/utils"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,33 +16,69 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Search, Filter } from "lucide-react"
 
 function StockContent() {
-  const { products, companies, addProduct, updateProductStatus } = useStore()
+  const { currentUser } = useStore()
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [search, setSearch] = useState("")
 
+  const [products, setProducts] = useState<any[]>([])
+  const [companies, setCompanies] = useState<any[]>([])
+
   const [newProduct, setNewProduct] = useState({
     clientName: "",
-    companyName: "",
+    companyId: "",
     phone: "",
     price: 0,
   })
 
-  const handleAddProduct = (e: React.FormEvent) => {
+  useEffect(() => {
+    const load = async () => {
+      const [{ data: p }, { data: c }] = await Promise.all([
+        supabase.from("products").select("id, client_name, phone, price, status, company_id, delivery_worker_id, created_at").order("created_at", { ascending: false }),
+        supabase.from("companies").select("id, name, benefit").order("created_at", { ascending: false }),
+      ])
+      if (p) setProducts(p)
+      if (c) setCompanies(c)
+    }
+    load()
+  }, [])
+
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
-    const id = `PROD-${Math.floor(Math.random() * 10000)}`
-    addProduct({
-      ...newProduct,
-      id,
-      status: "in stock",
-    })
-    setIsAddOpen(false)
-    setNewProduct({ clientName: "", companyName: "", phone: "", price: 0 })
+    const { data, error } = await supabase
+      .from("products")
+      .insert({
+        client_name: newProduct.clientName,
+        phone: newProduct.phone,
+        price: newProduct.price,
+        status: "in stock",
+        company_id: newProduct.companyId || null,
+      })
+      .select()
+      .single()
+    if (!error && data) {
+      setProducts((prev) => [data, ...prev])
+      setIsAddOpen(false)
+      setNewProduct({ clientName: "", companyId: "", phone: "", price: 0 })
+    }
   }
 
+  const handleStatusChange = async (id: number, status: ProductStatus) => {
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)))
+    await supabase.from("products").update({ status }).eq("id", id)
+  }
+
+  const handleDeleteProduct = async (id: number) => {
+    await supabase.from("products").delete().eq("id", id)
+    setProducts((prev) => prev.filter((p) => p.id !== id))
+  }
+
+  const canDelete = isSuperRole(currentUser?.role) || currentUser?.role === "admin"
+
   const filteredProducts = products.filter((p) => {
-    const matchesCompany = filterCompany === "all" || p.companyName === filterCompany
-    const matchesSearch = p.clientName.toLowerCase().includes(search.toLowerCase()) || p.id.includes(search)
+    const matchesCompany = filterCompany === "all" || String(p.company_id) === filterCompany
+    const matchesSearch =
+      (p.client_name || "").toLowerCase().includes(search.toLowerCase()) || String(p.id).includes(search)
     return matchesCompany && matchesSearch
   })
 
@@ -74,13 +112,13 @@ function StockContent() {
                 </div>
                 <div className="grid gap-2">
                   <Label>Company</Label>
-                  <Select required onValueChange={(val) => setNewProduct({ ...newProduct, companyName: val })}>
+                  <Select required onValueChange={(val) => setNewProduct({ ...newProduct, companyId: val })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select company" />
                     </SelectTrigger>
                     <SelectContent>
                       {companies.map((c) => (
-                        <SelectItem key={c.id} value={c.name}>
+                        <SelectItem key={c.id} value={String(c.id)}>
                           {c.name}
                         </SelectItem>
                       ))}
@@ -135,7 +173,7 @@ function StockContent() {
               <SelectContent>
                 <SelectItem value="all">All Companies</SelectItem>
                 {companies.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>
+                  <SelectItem key={c.id} value={String(c.id)}>
                     {c.name}
                   </SelectItem>
                 ))}
@@ -162,11 +200,11 @@ function StockContent() {
                   <TableRow key={p.id}>
                     <TableCell className="font-mono text-xs">{p.id}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{p.clientName}</div>
+                      <div className="font-medium">{p.client_name}</div>
                       <div className="text-xs text-muted-foreground">{p.phone}</div>
                     </TableCell>
-                    <TableCell>{p.companyName}</TableCell>
-                    <TableCell>${p.price.toFixed(2)}</TableCell>
+                    <TableCell>{companies.find((c) => c.id === p.company_id)?.name || "-"}</TableCell>
+                    <TableCell>${Number(p.price || 0).toFixed(2)}</TableCell>
                     <TableCell>
                       <Badge
                         variant={
@@ -184,17 +222,27 @@ function StockContent() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Select value={p.status} onValueChange={(val) => updateProductStatus(p.id, val as ProductStatus)}>
-                        <SelectTrigger className="w-[130px] ml-auto h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="in stock">In Stock</SelectItem>
-                          <SelectItem value="delivery">Delivery</SelectItem>
-                          <SelectItem value="delivered">Delivered</SelectItem>
-                          <SelectItem value="canceled">Canceled</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="flex justify-end gap-2">
+                        <Select value={p.status} onValueChange={(val) => handleStatusChange(p.id, val as ProductStatus)}>
+                          <SelectTrigger className="w-[130px] h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="in stock">In Stock</SelectItem>
+                            <SelectItem value="delivery">Delivery</SelectItem>
+                            <SelectItem value="delivered">Delivered</SelectItem>
+                            <SelectItem value="canceled">Canceled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={!canDelete}
+                          onClick={() => handleDeleteProduct(p.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

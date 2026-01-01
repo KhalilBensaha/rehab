@@ -2,8 +2,8 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { useStore } from "@/lib/store"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabaseClient"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,8 +14,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Plus, Phone, DollarSign, FileCheck } from "lucide-react"
 
 export default function WorkersPage() {
-  const { workers, addWorker } = useStore()
   const [isAddOpen, setIsAddOpen] = useState(false)
+  const [workers, setWorkers] = useState<Array<any>>([])
+  const [loading, setLoading] = useState(false)
 
   const [newWorker, setNewWorker] = useState({
     name: "",
@@ -23,16 +24,47 @@ export default function WorkersPage() {
     commission: 0,
   })
 
-  const handleAddWorker = (e: React.FormEvent) => {
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from("delivery_workers")
+        .select("id, name, phone, profile_image_url, certificate_image_url, product_fee, created_at")
+        .order("created_at", { ascending: false })
+      if (!error && data) {
+        setWorkers(data)
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const handleAddWorker = async (e: React.FormEvent) => {
     e.preventDefault()
-    addWorker({
-      ...newWorker,
-      id: `W-${Math.floor(Math.random() * 1000)}`,
-      profilePic: `/placeholder.svg?height=100&width=100&query=profile`,
-      certificates: `/placeholder.svg?height=300&width=200&query=certificate`,
-    })
-    setIsAddOpen(false)
-    setNewWorker({ name: "", phone: "", commission: 0 })
+    const { data, error } = await supabase
+      .from("delivery_workers")
+      .insert({
+        name: newWorker.name,
+        phone: newWorker.phone,
+        product_fee: newWorker.commission,
+        profile_image_url: "/placeholder.svg?height=100&width=100&query=profile",
+        certificate_image_url: "/placeholder.svg?height=300&width=200&query=certificate",
+      })
+      .select()
+      .single()
+
+    if (!error && data) {
+      setWorkers((prev) => [data, ...prev])
+      setIsAddOpen(false)
+      setNewWorker({ name: "", phone: "", commission: 0 })
+    }
+  }
+
+  const handleDeleteWorker = async (id: number) => {
+    const { error } = await supabase.from("delivery_workers").delete().eq("id", id)
+    if (!error) {
+      setWorkers((prev) => prev.filter((w) => w.id !== id))
+    }
   }
 
   return (
@@ -109,7 +141,7 @@ export default function WorkersPage() {
                 <div className="px-6 pb-6 text-center">
                   <div className="-mt-10 mb-4 flex justify-center">
                     <Avatar className="h-20 w-20 border-4 border-background shadow-lg">
-                      <AvatarImage src={worker.profilePic || "/placeholder.svg"} />
+                      <AvatarImage src={worker.profile_image_url || "/placeholder.svg"} />
                       <AvatarFallback>{worker.name.charAt(0)}</AvatarFallback>
                     </Avatar>
                   </div>
@@ -123,7 +155,7 @@ export default function WorkersPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <DollarSign className="h-3 w-3 text-primary" />
-                      <span>${worker.commission} / delivery</span>
+                      <span>${worker.product_fee} / delivery</span>
                     </div>
                   </div>
 
@@ -131,8 +163,13 @@ export default function WorkersPage() {
                     <Button variant="outline" size="sm" className="w-full bg-transparent">
                       Edit Profile
                     </Button>
-                    <Button variant="secondary" size="sm" className="w-full">
-                      View Certificates
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => handleDeleteWorker(worker.id)}
+                    >
+                      Delete
                     </Button>
                   </div>
                 </div>

@@ -14,6 +14,7 @@ import { toast } from "@/hooks/use-toast"
 import { Toaster } from "@/components/ui/toaster"
 import { translations } from "@/lib/i18n"
 import { LanguageSwitcher } from "@/components/language-switcher"
+import Image from "next/image"
 
 export default function LoginPage() {
   const [username, setUsername] = useState("")
@@ -37,7 +38,8 @@ export default function LoginPage() {
       }
       // Fetch user role
       const role = await getUserRole(data.user.id);
-      setCurrentUser({ id: data.user.id, username, role });
+      const email = data.user.email || `${username}@rehab.local`;
+      setCurrentUser({ id: data.user.id, name: username, email, role });
       toast({ title: t.login.welcome, description: `Logged in as ${username}` });
       router.push("/dashboard");
     } catch (err: any) {
@@ -57,7 +59,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-1">
           <div className="flex justify-center mb-4">
-            <div className="w-12 h-12 rounded bg-gradient-to-br from-rehab-gradient-start to-rehab-gradient-end" />
+           <Image src="/logo.jpg" alt="Logo" width={100} height={100} />
           </div>
           <CardTitle className="text-2xl">{t.login.title}</CardTitle>
           <CardDescription>{t.login.description}</CardDescription>

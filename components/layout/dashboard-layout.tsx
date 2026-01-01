@@ -4,11 +4,12 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useStore } from "@/lib/store"
-import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus } from "lucide-react"
+import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus, PiggyBank } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { cn, isSuperRole } from "@/lib/utils"
 import { translations } from "@/lib/i18n"
 import { LanguageSwitcher } from "@/components/language-switcher"
+import Image from "next/image"
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { currentUser, setCurrentUser, locale } = useStore()
@@ -25,7 +26,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   if (!mounted || !currentUser) return null
 
-  const isSuper = currentUser.role === "superadmin"
+  const isSuper = isSuperRole(currentUser.role)
   const t = translations[locale || "en"]
   const dir = t.dir
 
@@ -38,6 +39,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       ? [
           { name: t.nav.companies, href: "/dashboard/companies", icon: Building2 },
           { name: t.nav.admins, href: "/dashboard/admins", icon: UserPlus },
+          { name: t.nav.treasure, href: "/dashboard/treasure", icon: PiggyBank },
         ]
       : []),
   ]
@@ -60,7 +62,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               dir === "rtl" && "flex-row-reverse",
             )}
           >
-            <div className="w-8 h-8 rounded bg-gradient-to-br from-rehab-gradient-start to-rehab-gradient-end" />
+            <Image src="/logo.jpg" alt="Logo" width={48} height={48} />
             REHAB
           </div>
           <p className={cn("text-xs text-muted-foreground mt-1 px-1", dir === "rtl" && "text-right")}>
