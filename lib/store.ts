@@ -61,14 +61,8 @@ interface RehabState {
 export const useStore = create<RehabState>()(
   persist(
     (set) => ({
-      admins: [
-        { id: "1", name: "Super Admin", email: "super@rehab.com", role: "superadmin" },
-        { id: "2", name: "Delivery Admin", email: "admin@rehab.com", role: "admin" },
-      ],
-      companies: [
-        { id: "c1", name: "Global Logistics", benefit: 5.5 },
-        { id: "c2", name: "Express Way", benefit: 4.2 },
-      ],
+      admins: [],
+      companies: [],
       products: [],
       workers: [],
       currentUser: null,

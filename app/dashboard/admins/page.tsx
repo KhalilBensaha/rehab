@@ -2,8 +2,9 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { useStore } from "@/lib/store"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabaseClient"
+import { isSuperRole } from "@/lib/utils"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,25 +17,59 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useTranslations } from "@/lib/i18n"
 
 export default function AdminsPage() {
-  const { admins, addAdmin, removeAdmin, updateAdminRole, currentUser } = useStore()
+  const [admins, setAdmins] = useState<any[]>([])
+  const [currentUser, setCurrentUserState] = useState<any>(null)
   const { t } = useTranslations()
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [selectedAdmin, setSelectedAdmin] = useState<any>(null)
-  const [newAdmin, setNewAdmin] = useState({ name: "", email: "" })
+  const [newAdmin, setNewAdmin] = useState({ username: "", password: "" })
 
-  if (currentUser?.role !== "superadmin") {
+  const handleDeleteAdmin = async (id: string) => {
+    const res = await fetch("/api/admins/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    })
+    if (res.ok) {
+      setAdmins((prev) => prev.filter((a) => a.id !== id))
+      if (selectedAdmin?.id === id) setSelectedAdmin(null)
+    }
+  }
+
+  useEffect(() => {
+    const load = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      setCurrentUserState(user)
+
+      const res = await fetch("/api/admins/list")
+      if (res.ok) {
+        const body = await res.json()
+        setAdmins(body.admins || [])
+      }
+    }
+    load()
+  }, [])
+
+  // We only have auth user on the client; allow if current user exists and their role is super
+  const currentRole = admins.find((a) => a.id === currentUser?.id)?.role || currentUser?.user_metadata?.role
+
+  if (!isSuperRole(currentRole)) {
     return <DashboardLayout>Access Denied</DashboardLayout>
   }
 
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
-    addAdmin({
-      id: Math.random().toString(36).substr(2, 9),
-      ...newAdmin,
-      role: "admin",
-    })
+    const email = `${newAdmin.username}@rehab.local`
+    const { data, error } = await supabase.auth.signUp({ email, password: newAdmin.password })
+    if (error || !data.user) return
+    await supabase.from("profiles").insert({ id: data.user.id, role: "admin" })
+    if (data.user) {
+      setAdmins((prev) => [{ id: data.user.id, role: "admin", email, name: newAdmin.username }, ...prev])
+    }
     setIsAddOpen(false)
-    setNewAdmin({ name: "", email: "" })
+    setNewAdmin({ username: "", password: "" })
   }
 
   return (
@@ -57,22 +92,22 @@ export default function AdminsPage() {
               </DialogHeader>
               <form onSubmit={handleAdd} className="space-y-4 pt-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="aname">{t("name")}</Label>
+                  <Label htmlFor="aname">Username</Label>
                   <Input
                     id="aname"
                     required
-                    value={newAdmin.name}
-                    onChange={(e) => setNewAdmin({ ...newAdmin, name: e.target.value })}
+                    value={newAdmin.username}
+                    onChange={(e) => setNewAdmin({ ...newAdmin, username: e.target.value })}
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="aemail">{t("emailAddress")}</Label>
+                  <Label htmlFor="apassword">Password</Label>
                   <Input
-                    id="aemail"
-                    type="email"
+                    id="apassword"
+                    type="password"
                     required
-                    value={newAdmin.email}
-                    onChange={(e) => setNewAdmin({ ...newAdmin, email: e.target.value })}
+                    value={newAdmin.password}
+                    onChange={(e) => setNewAdmin({ ...newAdmin, password: e.target.value })}
                   />
                 </div>
                 <Button type="submit" className="w-full mt-4">
@@ -100,12 +135,12 @@ export default function AdminsPage() {
                   onClick={() => setSelectedAdmin(admin)}
                 >
                   <TableCell>
-                    <div className="font-medium">{admin.name}</div>
-                    <div className="text-xs text-muted-foreground">{admin.email}</div>
+                    <div className="font-medium">{admin.name || admin.email || admin.id}</div>
+                    <div className="text-xs text-muted-foreground">{admin.email || admin.id}</div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={admin.role === "superadmin" ? "default" : "secondary"} className="gap-1">
-                      {admin.role === "superadmin" ? (
+                    <Badge variant={isSuperRole(admin.role) ? "default" : "secondary"} className="gap-1">
+                      {isSuperRole(admin.role) ? (
                         <ShieldCheck className="h-3 w-3" />
                       ) : (
                         <Shield className="h-3 w-3" />
@@ -125,11 +160,11 @@ export default function AdminsPage() {
                           <Eye className="mr-2 h-4 w-4" /> {t("viewDetails")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() =>
-                            updateAdminRole(admin.id, admin.role === "superadmin" ? "admin" : "superadmin")
-                          }
+                          className="text-destructive"
+                          disabled={admin.id === currentUser?.id}
+                          onClick={() => handleDeleteAdmin(admin.id)}
                         >
-                          <Shield className="mr-2 h-4 w-4" /> {t("toggleSuperStatus")}
+                          <Trash2 className="mr-2 h-4 w-4" /> Remove Admin
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -150,45 +185,21 @@ export default function AdminsPage() {
               <div className="space-y-6 pt-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-xs text-muted-foreground">{t("fullName")}</Label>
-                    <p className="font-medium">{selectedAdmin.name}</p>
+                    <Label className="text-xs text-muted-foreground">Name</Label>
+                    <p className="font-medium break-all">{selectedAdmin.name || selectedAdmin.email || selectedAdmin.id}</p>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">{t("emailAddress")}</Label>
-                    <p className="font-medium">{selectedAdmin.email}</p>
+                    <Label className="text-xs text-muted-foreground">Email</Label>
+                    <p className="font-medium break-all">{selectedAdmin.email || "(not provided)"}</p>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">{t("role")}</Label>
                     <div className="pt-1">
-                      <Badge variant={selectedAdmin.role === "superadmin" ? "default" : "secondary"}>
+                      <Badge variant={isSuperRole(selectedAdmin.role) ? "default" : "secondary"}>
                         {selectedAdmin.role}
                       </Badge>
                     </div>
                   </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">{t("userID")}</Label>
-                    <p className="font-mono text-xs">{selectedAdmin.id}</p>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t">
-                  <h3 className="text-sm font-semibold mb-3 text-destructive">{t("dangerZone")}</h3>
-                  <Button
-                    variant="destructive"
-                    className="w-full gap-2"
-                    disabled={selectedAdmin.id === currentUser?.id}
-                    onClick={() => {
-                      removeAdmin(selectedAdmin.id)
-                      setSelectedAdmin(null)
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" /> {t("removeUserAccess")}
-                  </Button>
-                  {selectedAdmin.id === currentUser?.id && (
-                    <p className="text-[10px] text-muted-foreground mt-2 text-center italic">
-                      {t("cannotRemoveOwnAccess")}
-                    </p>
-                  )}
                 </div>
               </div>
             )}

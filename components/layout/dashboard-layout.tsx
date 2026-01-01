@@ -4,17 +4,19 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useStore } from "@/lib/store"
-import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus } from "lucide-react"
+import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus, PiggyBank, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { cn, isSuperRole } from "@/lib/utils"
 import { translations } from "@/lib/i18n"
 import { LanguageSwitcher } from "@/components/language-switcher"
+import Image from "next/image"
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { currentUser, setCurrentUser, locale } = useStore()
   const router = useRouter()
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   useEffect(() => {
     setMounted(true)
@@ -25,7 +27,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   if (!mounted || !currentUser) return null
 
-  const isSuper = currentUser.role === "superadmin"
+  const isSuper = isSuperRole(currentUser.role)
   const t = translations[locale || "en"]
   const dir = t.dir
 
@@ -38,20 +40,23 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       ? [
           { name: t.nav.companies, href: "/dashboard/companies", icon: Building2 },
           { name: t.nav.admins, href: "/dashboard/admins", icon: UserPlus },
+          { name: t.nav.treasure, href: "/dashboard/treasure", icon: PiggyBank },
         ]
       : []),
   ]
 
   return (
-    <div className={cn("flex min-h-screen bg-background text-foreground", dir === "rtl" && "flex-row-reverse")}>
+    <div className={cn("flex min-h-screen bg-background text-foreground")}> 
       {/* Sidebar */}
       <aside
         dir={dir}
         className={cn(
-          "w-64 border-r bg-card flex flex-col",
+          "bg-card flex flex-col transition-all duration-300 overflow-hidden",
+          sidebarOpen ? "w-64" : "w-0",
           dir === "rtl" ? "border-l border-r-0" : "border-r",
           dir === "rtl" && "items-end text-right",
         )}
+        aria-hidden={!sidebarOpen}
       >
         <div className={cn("p-6 w-full", dir === "rtl" && "text-right")}>
           <div
@@ -60,7 +65,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               dir === "rtl" && "flex-row-reverse",
             )}
           >
-            <div className="w-8 h-8 rounded bg-gradient-to-br from-rehab-gradient-start to-rehab-gradient-end" />
+            <Image src="/logo.jpg" alt="Logo" width={48} height={48} />
             REHAB
           </div>
           <p className={cn("text-xs text-muted-foreground mt-1 px-1", dir === "rtl" && "text-right")}>
@@ -122,6 +127,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <div
             className={cn("flex items-center gap-2 text-sm text-muted-foreground", dir === "rtl" && "flex-row-reverse")}
           >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mr-2"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              aria-label="Toggle sidebar"
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
             <span>{t.nav.dashboard}</span>
             <ChevronRight className={cn("h-3 w-3", dir === "rtl" && "rotate-180")} />
             <span className="text-foreground font-medium capitalize">

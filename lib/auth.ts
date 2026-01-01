@@ -18,5 +18,7 @@ export async function login(identifier: string, password: string) {
 export async function getUserRole(userId: string) {
   const { data, error } = await supabase.from('profiles').select('role').eq('id', userId).single();
   if (error) throw error;
-  return data.role;
+  const raw = data.role || '';
+  const normalized = raw.toLowerCase().replace(/[_\s-]+/g, '');
+  return normalized === 'superadmin' ? 'superadmin' : raw;
 }
