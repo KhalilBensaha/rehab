@@ -137,7 +137,7 @@ function SheetsContent() {
                           <TableCell className="font-mono text-xs">{p.id}</TableCell>
                           <TableCell>{p.clientName}</TableCell>
                           <TableCell>{p.companyName}</TableCell>
-                          <TableCell>${p.price.toFixed(2)}</TableCell>
+                          <TableCell>{p.price.toFixed(2)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className="capitalize">
                               {statusLabel(p.status)}
