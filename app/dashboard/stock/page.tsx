@@ -37,12 +37,34 @@ function StockContent() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: p }, { data: c }] = await Promise.all([
-        supabase.from("products").select("id, client_name, phone, price, status, company_id, delivery_worker_id, created_at").order("created_at", { ascending: false }),
-        supabase.from("companies").select("id, name, benefit").order("created_at", { ascending: false }),
+      const [{ data: p }, companiesRes] = await Promise.all([
+        supabase
+          .from("products")
+          .select("id, client_name, phone, price, status, company_id, delivery_worker_id, created_at")
+          .order("created_at", { ascending: false }),
+        fetch("/api/companies/list"),
       ])
       if (p) setProducts(p)
-      if (c) setCompanies(c)
+
+      let companiesData: any[] | undefined
+      try {
+        const body = await companiesRes.json()
+        if (companiesRes.ok) {
+          companiesData = body.companies
+        }
+      } catch (err) {
+        console.error("Failed to parse companies list", err)
+      }
+
+      if (!companiesData) {
+        const { data: c } = await supabase
+          .from("companies")
+          .select("id, name, combenef")
+          .order("created_at", { ascending: false })
+        companiesData = c || []
+      }
+
+      setCompanies(companiesData)
     }
     load()
   }, [])
