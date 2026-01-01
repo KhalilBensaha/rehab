@@ -45,7 +45,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   ]
 
   return (
-    <div className={cn("flex min-h-screen bg-background text-foreground", dir === "rtl" && "flex-row-reverse")}>
+    <div className={cn("flex min-h-screen bg-background text-foreground")}> 
       {/* Sidebar */}
       <aside
         dir={dir}
