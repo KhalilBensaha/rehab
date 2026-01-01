@@ -59,7 +59,7 @@ function SheetsContent() {
               )}
             </div>
           </div>
-
+          
           {/* Sheet Detail */}
           <div className="lg:col-span-2">
             {selectedWorker ? (

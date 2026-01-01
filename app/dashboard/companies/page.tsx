@@ -5,6 +5,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { isSuperRole } from "@/lib/utils"
+import { useTranslations } from "@/lib/i18n"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +16,7 @@ import { Building2, Trash2, Plus, TrendingUp } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 export default function CompaniesPage() {
+  const { t } = useTranslations()
   const [companies, setCompanies] = useState<any[]>([])
   const [currentRole, setCurrentRole] = useState<string | undefined>(undefined)
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -69,7 +71,10 @@ export default function CompaniesPage() {
           setCompanies((prev) => [body.company, ...prev])
           setIsAddOpen(false)
           setNewCompany({ name: "", benefit: 0 })
-          toast({ title: "Company added", description: `${body.company.name} is now in the system.` })
+            toast({
+              title: t("companies.toastAddedTitle"),
+              description: t("companies.toastAddedDesc", { name: body.company.name }),
+            })
           setSubmitting(false)
           return
         }
@@ -86,7 +91,10 @@ export default function CompaniesPage() {
         setCompanies((prev) => [fallback.data, ...prev])
         setIsAddOpen(false)
         setNewCompany({ name: "", benefit: 0 })
-        toast({ title: "Company added", description: `${fallback.data.name} is now in the system.` })
+          toast({
+            title: t("companies.toastAddedTitle"),
+            description: t("companies.toastAddedDesc", { name: fallback.data.name }),
+          })
       } else {
         const resText = await res.text().catch(() => "")
         let errBody: any = {}
@@ -97,7 +105,7 @@ export default function CompaniesPage() {
         }
         toast({
           variant: "destructive",
-          title: "Failed to add company",
+          title: t("companies.toastFailedTitle"),
           description: errBody?.error || fallback.error?.message || resText || "Unknown error",
         })
         console.error("Create company failed", { status: res.status, body: errBody, fallbackError: fallback.error })
@@ -119,22 +127,22 @@ export default function CompaniesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Partner Companies</h1>
-            <p className="text-muted-foreground">Manage companies and their fixed benefit per product.</p>
+            <h1 className="text-2xl font-bold">{t("companies.title")}</h1>
+            <p className="text-muted-foreground">{t("companies.subtitle")}</p>
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
-                <Plus className="h-4 w-4" /> Add Company
+                <Plus className="h-4 w-4" /> {t("companies.add")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add New Company</DialogTitle>
+                <DialogTitle>{t("companies.dialogTitle")}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleAdd} className="space-y-4 pt-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="cname">Company Name</Label>
+                  <Label htmlFor="cname">{t("companies.name")}</Label>
                   <Input
                     id="cname"
                     required
@@ -143,7 +151,7 @@ export default function CompaniesPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="benefit">Benefit Amount (DZD)</Label>
+                  <Label htmlFor="benefit">{t("companies.benefit")}</Label>
                   <Input
                     id="benefit"
                     type="number"
@@ -154,7 +162,7 @@ export default function CompaniesPage() {
                   />
                 </div>
                 <Button type="submit" className="w-full mt-4">
-                  Create Company
+                  {t("companies.submit")}
                 </Button>
               </form>
             </DialogContent>
@@ -179,14 +187,14 @@ export default function CompaniesPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{Number(company.combenef || 0).toFixed(2)} DZD</div>
+                <div className="text-2xl font-bold">{Number(company.combenef || 0).toFixed(2)} {t("common.currency")}</div>
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                   <TrendingUp className="h-3 w-3 text-green-500" />
-                  Benefit (fixed amount per product)
+                  {t("companies.benefitHelp")}
                 </p>
                 <div className="mt-4 pt-4 border-t">
                   <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Company ID:</span>
+                    <span className="text-muted-foreground">{t("companies.companyId")}</span>
                     <span className="font-mono">{company.id}</span>
                   </div>
                 </div>
