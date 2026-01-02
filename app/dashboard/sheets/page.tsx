@@ -28,13 +28,14 @@ function SheetsContent() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: workersData }, { data: productsData }] = await Promise.all([
+      const [{ data: workersData }, { data: productsData }, { data: companiesData }] = await Promise.all([
         supabase
           .from("delivery_workers")
           .select("id, name, phone, profile_image_url, certificate_image_url, product_fee"),
         supabase
           .from("products")
           .select("id, client_name, phone, price, status, company_id, delivery_worker_id"),
+        supabase.from("companies").select("id, name"),
       ])
 
       if (workersData) {
@@ -51,11 +52,16 @@ function SheetsContent() {
       }
 
       if (productsData) {
+        const companyNameById = new Map<string, string>()
+        companiesData?.forEach((c) => companyNameById.set(String(c.id), c.name))
+
         setProducts(
           productsData.map((prod) => ({
             id: String(prod.id),
             clientName: prod.client_name,
-            companyName: prod.company_id ? String(prod.company_id) : "-",
+            companyName: prod.company_id
+              ? companyNameById.get(String(prod.company_id)) || String(prod.company_id)
+              : "-",
             phone: prod.phone,
             price: Number(prod.price || 0),
             status: normalizeStatus(prod.status || "in_stock") as any,

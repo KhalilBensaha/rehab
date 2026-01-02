@@ -59,20 +59,7 @@ function StockContent() {
           .order("created_at", { ascending: false }),
         fetch("/api/companies/list"),
       ])
-      if (p) {
-        setProducts(p)
-        setStoreProducts(
-          p.map((prod) => ({
-            id: String(prod.id),
-            clientName: prod.client_name,
-            companyName: prod.company_id ? String(prod.company_id) : "-",
-            phone: prod.phone,
-            price: Number(prod.price || 0),
-            status: normalizeStatus(prod.status),
-            workerId: prod.delivery_worker_id ? String(prod.delivery_worker_id) : undefined,
-          })),
-        )
-      }
+      if (p) setProducts(p)
 
       let companiesData: any[] | undefined
       try {
@@ -93,6 +80,25 @@ function StockContent() {
       }
 
       setCompanies(companiesData)
+
+      if (p && companiesData) {
+        const companyNameById = new Map<string, string>()
+        companiesData.forEach((c: any) => companyNameById.set(String(c.id), c.name))
+
+        setStoreProducts(
+          p.map((prod) => ({
+            id: String(prod.id),
+            clientName: prod.client_name,
+            companyName: prod.company_id
+              ? companyNameById.get(String(prod.company_id)) || String(prod.company_id)
+              : "-",
+            phone: prod.phone,
+            price: Number(prod.price || 0),
+            status: normalizeStatus(prod.status),
+            workerId: prod.delivery_worker_id ? String(prod.delivery_worker_id) : undefined,
+          })),
+        )
+      }
     }
     load()
   }, [])
@@ -121,6 +127,21 @@ function StockContent() {
           setProducts((prev) => [body.product, ...prev])
           setIsAddOpen(false)
           setNewProduct({ productId: "", clientName: "", companyId: "", phone: "", price: 0 })
+          setStoreProducts((prev) => {
+            const companyName = companies.find((c) => String(c.id) === String(body.product.company_id))?.name
+            return [
+              {
+                id: String(body.product.id),
+                clientName: body.product.client_name,
+                companyName: body.product.company_id ? companyName || String(body.product.company_id) : "-",
+                phone: body.product.phone,
+                price: Number(body.product.price || 0),
+                status: normalizeStatus(body.product.status),
+                workerId: body.product.delivery_worker_id ? String(body.product.delivery_worker_id) : undefined,
+              },
+              ...prev,
+            ]
+          })
           return
         }
       }
@@ -144,6 +165,21 @@ function StockContent() {
       setProducts((prev) => [data, ...prev])
       setIsAddOpen(false)
       setNewProduct({ productId: "", clientName: "", companyId: "", phone: "", price: 0 })
+      setStoreProducts((prev) => {
+        const companyName = companies.find((c) => String(c.id) === String(data.company_id))?.name
+        return [
+          {
+            id: String(data.id),
+            clientName: data.client_name,
+            companyName: data.company_id ? companyName || String(data.company_id) : "-",
+            phone: data.phone,
+            price: Number(data.price || 0),
+            status: normalizeStatus(data.status),
+            workerId: data.delivery_worker_id ? String(data.delivery_worker_id) : undefined,
+          },
+          ...prev,
+        ]
+      })
     } else if (error) {
       console.error("Create product failed", error)
     }
