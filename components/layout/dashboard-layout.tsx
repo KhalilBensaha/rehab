@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useStore } from "@/lib/store"
-import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus, PiggyBank, Menu } from "lucide-react"
+import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus, PiggyBank, Menu, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn, isSuperRole } from "@/lib/utils"
 import { translations } from "@/lib/i18n"
@@ -36,6 +36,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     { name: t.nav.stock, href: "/dashboard/stock", icon: Package },
     { name: t.nav.workers, href: "/dashboard/workers", icon: Truck },
     { name: t.nav.sheets, href: "/dashboard/sheets", icon: ClipboardList },
+    { name: t.nav.settings, href: "/dashboard/settings", icon: Settings },
     ...(isSuper
       ? [
           { name: t.nav.companies, href: "/dashboard/companies", icon: Building2 },
