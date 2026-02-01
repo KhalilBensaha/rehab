@@ -2,7 +2,7 @@
 
 import { Label } from "@/components/ui/label"
 import { useEffect, useState, Suspense } from "react"
-import { useStore, type Worker } from "@/lib/store"
+import { useStore, type Worker, type ProductStatus } from "@/lib/store"
 import { supabase } from "@/lib/supabaseClient"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
@@ -18,6 +18,7 @@ function SheetsContent() {
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null)
   const [isAssignOpen, setIsAssignOpen] = useState(false)
   const [productToAssign, setProductToAssign] = useState<string>("")
+  const [assigning, setAssigning] = useState(false)
 
   const workerProducts = selectedWorker ? products.filter((p) => p.workerId === selectedWorker.id) : []
 
@@ -73,6 +74,29 @@ function SheetsContent() {
 
     load()
   }, [setProducts, setWorkers])
+
+  const handleAssign = async () => {
+    if (!selectedWorker || !productToAssign) return
+    setAssigning(true)
+    try {
+      await supabase
+        .from("products")
+        .update({ delivery_worker_id: selectedWorker.id, status: "delivery" })
+        .eq("id", productToAssign)
+
+      assignProduct(productToAssign, selectedWorker.id)
+    } finally {
+      setAssigning(false)
+      setIsAssignOpen(false)
+      setProductToAssign("")
+    }
+  }
+
+  const handleDetach = async (productId: string) => {
+    const newStatus: ProductStatus = "in_stock"
+    await supabase.from("products").update({ delivery_worker_id: null, status: newStatus }).eq("id", productId)
+    detachProduct(productId)
+  }
 
   return (
     <DashboardLayout>
@@ -150,14 +174,20 @@ function SheetsContent() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive"
-                              onClick={() => detachProduct(p.id)}
-                            >
-                              Detach
-                            </Button>
+                            {normalizeStatus(p.status) === "delivered" ? (
+                              <Badge variant="secondary" className="bg-green-100 text-green-800">
+                                ✓ Delivered
+                              </Badge>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive"
+                                onClick={() => handleDetach(p.id)}
+                              >
+                                Detach
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -205,16 +235,10 @@ function SheetsContent() {
               </div>
               <Button
                 className="w-full"
-                disabled={!productToAssign}
-                onClick={() => {
-                  if (selectedWorker) {
-                    assignProduct(productToAssign, selectedWorker.id)
-                    setIsAssignOpen(false)
-                    setProductToAssign("")
-                  }
-                }}
+                disabled={!productToAssign || assigning}
+                onClick={handleAssign}
               >
-                Confirm Assignment
+                {assigning ? "Assigning..." : "Confirm Assignment"}
               </Button>
             </div>
           </DialogContent>
