@@ -1,8 +1,9 @@
 "use client"
 
 import { Label } from "@/components/ui/label"
-import { useState, Suspense } from "react"
-import { useStore, type Worker } from "@/lib/store"
+import { useEffect, useState, Suspense } from "react"
+import { useStore, type Worker, type ProductStatus } from "@/lib/store"
+import { supabase } from "@/lib/supabaseClient"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -13,14 +14,89 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, UserCircle, ExternalLink, ArrowRightLeft } from "lucide-react"
 
 function SheetsContent() {
-  const { workers, products, assignProduct, detachProduct } = useStore()
+  const { workers, products, assignProduct, detachProduct, setWorkers, setProducts } = useStore()
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null)
   const [isAssignOpen, setIsAssignOpen] = useState(false)
   const [productToAssign, setProductToAssign] = useState<string>("")
+  const [assigning, setAssigning] = useState(false)
 
   const workerProducts = selectedWorker ? products.filter((p) => p.workerId === selectedWorker.id) : []
 
-  const availableProducts = products.filter((p) => p.status === "in stock")
+  const normalizeStatus = (status: string) => (status === "in stock" ? "in_stock" : status)
+  const statusLabel = (status: string) => normalizeStatus(status).replace("_", " ")
+
+  const availableProducts = products.filter((p) => normalizeStatus(p.status) === "in_stock")
+
+  useEffect(() => {
+    const load = async () => {
+      const [{ data: workersData }, { data: productsData }, { data: companiesData }] = await Promise.all([
+        supabase
+          .from("delivery_workers")
+          .select("id, name, phone, profile_image_url, certificate_image_url, product_fee"),
+        supabase
+          .from("products")
+          .select("id, client_name, phone, price, status, company_id, delivery_worker_id"),
+        supabase.from("companies").select("id, name"),
+      ])
+
+      if (workersData) {
+        setWorkers(
+          workersData.map((w) => ({
+            id: String(w.id),
+            name: w.name,
+            phone: w.phone,
+            profilePic: w.profile_image_url || "",
+            certificates: w.certificate_image_url || "",
+            commission: Number(w.product_fee || 0),
+          })),
+        )
+      }
+
+      if (productsData) {
+        const companyNameById = new Map<string, string>()
+        companiesData?.forEach((c) => companyNameById.set(String(c.id), c.name))
+
+        setProducts(
+          productsData.map((prod) => ({
+            id: String(prod.id),
+            clientName: prod.client_name,
+            companyName: prod.company_id
+              ? companyNameById.get(String(prod.company_id)) || String(prod.company_id)
+              : "-",
+            phone: prod.phone,
+            price: Number(prod.price || 0),
+            status: normalizeStatus(prod.status || "in_stock") as any,
+            workerId: prod.delivery_worker_id ? String(prod.delivery_worker_id) : undefined,
+          })),
+        )
+      }
+    }
+
+    load()
+  }, [setProducts, setWorkers])
+
+  const handleAssign = async () => {
+    if (!selectedWorker || !productToAssign) return
+    setAssigning(true)
+    try {
+      await supabase
+        .from("products")
+        .update({ delivery_worker_id: selectedWorker.id, status: "delivery" })
+        .eq("id", productToAssign)
+
+      assignProduct(productToAssign, selectedWorker.id)
+    } finally {
+      setAssigning(false)
+      setIsAssignOpen(false)
+      setProductToAssign("")
+    }
+  }
+
+  const handleDetach = async (productId: string) => {
+    const newStatus: ProductStatus = "in_stock"
+    await supabase.from("products").update({ delivery_worker_id: null, status: newStatus }).eq("id", productId)
+    detachProduct(productId)
+  }
 
   return (
     <DashboardLayout>
@@ -91,21 +167,27 @@ function SheetsContent() {
                           <TableCell className="font-mono text-xs">{p.id}</TableCell>
                           <TableCell>{p.clientName}</TableCell>
                           <TableCell>{p.companyName}</TableCell>
-                          <TableCell>${p.price.toFixed(2)}</TableCell>
+                          <TableCell>{p.price.toFixed(2)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className="capitalize">
-                              {p.status}
+                              {statusLabel(p.status)}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive"
-                              onClick={() => detachProduct(p.id)}
-                            >
-                              Detach
-                            </Button>
+                            {normalizeStatus(p.status) === "delivered" ? (
+                              <Badge variant="secondary" className="bg-green-100 text-green-800">
+                                ✓ Delivered
+                              </Badge>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive"
+                                onClick={() => handleDetach(p.id)}
+                              >
+                                Detach
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -153,16 +235,10 @@ function SheetsContent() {
               </div>
               <Button
                 className="w-full"
-                disabled={!productToAssign}
-                onClick={() => {
-                  if (selectedWorker) {
-                    assignProduct(productToAssign, selectedWorker.id)
-                    setIsAssignOpen(false)
-                    setProductToAssign("")
-                  }
-                }}
+                disabled={!productToAssign || assigning}
+                onClick={handleAssign}
               >
-                Confirm Assignment
+                {assigning ? "Assigning..." : "Confirm Assignment"}
               </Button>
             </div>
           </DialogContent>

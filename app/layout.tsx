@@ -4,6 +4,7 @@ import { Inter } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { I18nProvider } from "@/components/i18n-provider"
+import { ThemeProvider } from "@/components/theme-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -38,7 +39,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} antialiased`}>
-        <I18nProvider>{children}</I18nProvider>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          <I18nProvider>{children}</I18nProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

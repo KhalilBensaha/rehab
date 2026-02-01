@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
+import { useStore, type ProductStatus } from "@/lib/store"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,13 +12,18 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Plus, Phone, DollarSign, FileCheck } from "lucide-react"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Plus, Phone, DollarSign, FileCheck, Package } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 export default function WorkersPage() {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [workers, setWorkers] = useState<Array<any>>([])
+  const { setWorkers: setStoreWorkers, setProducts: setStoreProducts, products, updateProductStatus } = useStore()
   const [loading, setLoading] = useState(false)
+  const [selectedWorkerForProducts, setSelectedWorkerForProducts] = useState<any | null>(null)
+  const [isProductsDialogOpen, setIsProductsDialogOpen] = useState(false)
 
   const [newWorker, setNewWorker] = useState({
     name: "",
@@ -33,15 +39,76 @@ export default function WorkersPage() {
   const [editProfileFile, setEditProfileFile] = useState<File | null>(null)
   const [editCertificateFile, setEditCertificateFile] = useState<File | null>(null)
 
+  const normalizeStatus = (status: string): ProductStatus => {
+    if (status === "in stock") return "in_stock"
+    if (status === "in_stock" || status === "delivery" || status === "delivered" || status === "canceled") {
+      return status as ProductStatus
+    }
+    return "in_stock"
+  }
+
+  const handleMarkStatus = async (productId: string, status: ProductStatus) => {
+    updateProductStatus(productId, status)
+    
+    const updateData: Record<string, any> = { status }
+    
+    // If marking as delivered, save the delivery timestamp
+    if (status === "delivered") {
+      updateData.delivered_at = new Date().toISOString()
+    }
+    
+    await supabase.from("products").update(updateData).eq("id", productId)
+    
+    if (status === "delivered") {
+      toast({
+        title: "Product Delivered",
+        description: "The product has been marked as delivered and saved to history.",
+      })
+    }
+  }
+
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const { data, error } = await supabase
-        .from("delivery_workers")
-        .select("id, name, phone, profile_image_url, certificate_image_url, product_fee, created_at")
-        .order("created_at", { ascending: false })
+      const [{ data, error }, { data: productsData }, { data: companiesData }] = await Promise.all([
+        supabase
+          .from("delivery_workers")
+          .select("id, name, phone, profile_image_url, certificate_image_url, product_fee, created_at")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("products")
+          .select("id, client_name, phone, price, status, company_id, delivery_worker_id"),
+        supabase.from("companies").select("id, name"),
+      ])
       if (!error && data) {
         setWorkers(data)
+        setStoreWorkers(
+          data.map((w) => ({
+            id: String(w.id),
+            name: w.name,
+            phone: w.phone,
+            profilePic: w.profile_image_url || "",
+            certificates: w.certificate_image_url || "",
+            commission: Number(w.product_fee || 0),
+          })),
+        )
+      }
+
+      if (productsData) {
+        const nameById = new Map<string, string>()
+        companiesData?.forEach((c) => nameById.set(String(c.id), c.name))
+
+        setStoreProducts(
+          productsData.map((prod) => ({
+            id: String(prod.id),
+            clientName: prod.client_name,
+            companyName: prod.company_id ? nameById.get(String(prod.company_id)) || String(prod.company_id) : "-",
+            phone: prod.phone,
+            price: Number(prod.price || 0),
+            status: (prod.status as ProductStatus) || "in_stock",
+            workerId: prod.delivery_worker_id ? String(prod.delivery_worker_id) : undefined,
+          })),
+        )
       }
       setLoading(false)
     }
@@ -59,8 +126,11 @@ export default function WorkersPage() {
       contentType: file.type || "application/octet-stream",
     })
     if (uploadError) throw uploadError
-    const { data, error: urlError } = supabase.storage.from(bucket).getPublicUrl(path)
-    if (urlError) throw urlError
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+    if (!data?.publicUrl) {
+      throw new Error("Could not get public URL for uploaded file.")
+    }
     return data.publicUrl
   }
 
@@ -275,6 +345,21 @@ export default function WorkersPage() {
                       Delete
                     </Button>
                   </div>
+
+                  <div className="mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={() => {
+                        setSelectedWorkerForProducts(worker)
+                        setIsProductsDialogOpen(true)
+                      }}
+                    >
+                      <Package className="h-4 w-4" />
+                      Assigned Products ({products.filter((p) => p.workerId === String(worker.id)).length})
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -361,6 +446,99 @@ export default function WorkersPage() {
               </Button>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Assigned Products Dialog */}
+      <Dialog open={isProductsDialogOpen} onOpenChange={setIsProductsDialogOpen}>
+        <DialogContent className="sm:max-w-5xl w-full max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Assigned Products - {selectedWorkerForProducts?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-4">
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedWorkerForProducts && products.filter((p) => p.workerId === String(selectedWorkerForProducts.id)).map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                      <TableCell>{p.clientName}</TableCell>
+                      <TableCell>{p.companyName}</TableCell>
+                      <TableCell>{p.price} DZD</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            normalizeStatus(p.status) === "delivered"
+                              ? "secondary"
+                              : normalizeStatus(p.status) === "canceled"
+                                ? "destructive"
+                                : "outline"
+                          }
+                          className="capitalize"
+                        >
+                          {normalizeStatus(p.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {normalizeStatus(p.status) === "delivered" ? (
+                          <div className="flex justify-end gap-2">
+                            <Badge variant="secondary" className="bg-green-100 text-green-800">
+                              ✓ Delivered
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleMarkStatus(p.id, "delivery")}
+                            >
+                              Back to Delivery
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleMarkStatus(p.id, "delivered")}
+                            >
+                              Delivered
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive"
+                              onClick={() => handleMarkStatus(p.id, "canceled")}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {selectedWorkerForProducts && products.filter((p) => p.workerId === String(selectedWorkerForProducts.id)).length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">
+                        No products assigned to this worker.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </DashboardLayout>
