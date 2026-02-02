@@ -81,7 +81,7 @@ export default function OverviewPage() {
                         <Package className="h-5 w-5 text-primary" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-medium">{t("dashboard.recentItem", { client: p.clientName })}</p>
+                        <p className="text-sm font-medium">{t("dashboard.recentItem")}</p>
                         <p className="text-xs text-muted-foreground">
                           {p.companyName} • {Number(p.price || 0).toFixed(2)} {t("common.currency")}
                         </p>
@@ -96,7 +96,7 @@ export default function OverviewPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-rehab-gradient-start to-rehab-gradient-end text-white border-none">
+          <Card className="bg-linear-to-br from-rehab-gradient-start to-rehab-gradient-end text-white border-none">
             <CardHeader>
               <CardTitle className="text-white">{t("dashboard.performanceTitle")}</CardTitle>
             </CardHeader>
