@@ -12,8 +12,10 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, UserCircle, ExternalLink, ArrowRightLeft } from "lucide-react"
+import { useTranslations } from "@/lib/i18n"
 
 function SheetsContent() {
+  const { t } = useTranslations()
   const { workers, products, assignProduct, detachProduct, setWorkers, setProducts } = useStore()
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null)
   const [isAssignOpen, setIsAssignOpen] = useState(false)
@@ -23,7 +25,14 @@ function SheetsContent() {
   const workerProducts = selectedWorker ? products.filter((p) => p.workerId === selectedWorker.id) : []
 
   const normalizeStatus = (status: string) => (status === "in stock" ? "in_stock" : status)
-  const statusLabel = (status: string) => normalizeStatus(status).replace("_", " ")
+  const statusLabel = (status: string) => {
+    const normalized = normalizeStatus(status)
+    if (normalized === "in_stock") return t("stock.status.inStock")
+    if (normalized === "delivery") return t("stock.status.delivery")
+    if (normalized === "delivered") return t("stock.status.delivered")
+    if (normalized === "canceled") return t("stock.status.canceled")
+    return normalized.replace("_", " ")
+  }
 
   const availableProducts = products.filter((p) => normalizeStatus(p.status) === "in_stock")
 
@@ -102,15 +111,15 @@ function SheetsContent() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">Worker Sheets</h1>
-          <p className="text-muted-foreground">View worker assignments and manage product distribution.</p>
+          <h1 className="text-2xl font-bold">{t("sheets.title")}</h1>
+          <p className="text-muted-foreground">{t("sheets.subtitle")}</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Workers List */}
           <div className="lg:col-span-1 space-y-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
-              <UserCircle className="h-5 w-5 text-primary" /> Delivery Team
+              <UserCircle className="h-5 w-5 text-primary" /> {t("sheets.team")}
             </h2>
             <div className="space-y-2">
               {workers.map((worker) => (
@@ -123,7 +132,7 @@ function SheetsContent() {
                     <div>
                       <p className="font-medium">{worker.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {products.filter((p) => p.workerId === worker.id).length} assignments
+                        {products.filter((p) => p.workerId === worker.id).length} {t("sheets.assignments")}
                       </p>
                     </div>
                     <ExternalLink className="h-4 w-4 text-muted-foreground opacity-50" />
@@ -131,7 +140,7 @@ function SheetsContent() {
                 </Card>
               ))}
               {workers.length === 0 && (
-                <p className="text-sm text-center text-muted-foreground py-8">No workers found.</p>
+                <p className="text-sm text-center text-muted-foreground py-8">{t("sheets.emptyWorkers")}</p>
               )}
             </div>
           </div>
@@ -142,23 +151,25 @@ function SheetsContent() {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0">
                   <div>
-                    <CardTitle className="text-xl">{selectedWorker.name}'s Sheet</CardTitle>
-                    <p className="text-sm text-muted-foreground">Commission: ${selectedWorker.commission} / product</p>
+                    <CardTitle className="text-xl">{t("sheets.sheetTitle", { name: selectedWorker.name })}</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      {t("sheets.commission", { value: selectedWorker.commission.toFixed(2) })}
+                    </p>
                   </div>
                   <Button onClick={() => setIsAssignOpen(true)} className="gap-2">
-                    <ArrowRightLeft className="h-4 w-4" /> Affect Product
+                    <ArrowRightLeft className="h-4 w-4" /> {t("sheets.affect")}
                   </Button>
                 </CardHeader>
                 <CardContent>
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Product ID</TableHead>
-                        <TableHead>Client</TableHead>
-                        <TableHead>Company</TableHead>
-                        <TableHead>Price</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
+                        <TableHead>{t("sheets.table.id")}</TableHead>
+                        <TableHead>{t("sheets.table.client")}</TableHead>
+                        <TableHead>{t("sheets.table.company")}</TableHead>
+                        <TableHead>{t("sheets.table.price")}</TableHead>
+                        <TableHead>{t("sheets.table.status")}</TableHead>
+                        <TableHead className="text-right">{t("sheets.table.action")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -176,7 +187,7 @@ function SheetsContent() {
                           <TableCell className="text-right">
                             {normalizeStatus(p.status) === "delivered" ? (
                               <Badge variant="secondary" className="bg-green-100 text-green-800">
-                                ✓ Delivered
+                                ✓ {t("stock.status.delivered")}
                               </Badge>
                             ) : (
                               <Button
@@ -185,7 +196,7 @@ function SheetsContent() {
                                 className="text-destructive"
                                 onClick={() => handleDetach(p.id)}
                               >
-                                Detach
+                                {t("sheets.detach")}
                               </Button>
                             )}
                           </TableCell>
@@ -194,7 +205,7 @@ function SheetsContent() {
                       {workerProducts.length === 0 && (
                         <TableRow>
                           <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
-                            No products currently assigned to this worker.
+                            {t("sheets.noAssignments")}
                           </TableCell>
                         </TableRow>
                       )}
@@ -205,7 +216,7 @@ function SheetsContent() {
             ) : (
               <div className="h-full flex flex-col items-center justify-center border-2 border-dashed rounded-xl py-20 text-muted-foreground">
                 <Search className="h-10 w-10 mb-2 opacity-20" />
-                <p>Select a worker from the list to view their delivery sheet.</p>
+                <p>{t("sheets.selectWorker")}</p>
               </div>
             )}
           </div>
@@ -215,14 +226,14 @@ function SheetsContent() {
         <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Affect Product to {selectedWorker?.name}</DialogTitle>
+              <DialogTitle>{t("sheets.modalTitle", { name: selectedWorker?.name || "" })}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label>Select Product from Stock</Label>
+                <Label>{t("sheets.selectProduct")}</Label>
                 <Select onValueChange={setProductToAssign}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Search available products..." />
+                    <SelectValue placeholder={t("sheets.searchPlaceholder") || undefined} />
                   </SelectTrigger>
                   <SelectContent>
                     {availableProducts.map((p) => (
@@ -238,7 +249,7 @@ function SheetsContent() {
                 disabled={!productToAssign || assigning}
                 onClick={handleAssign}
               >
-                {assigning ? "Assigning..." : "Confirm Assignment"}
+                {assigning ? t("sheets.assigning") : t("sheets.confirm")}
               </Button>
             </div>
           </DialogContent>

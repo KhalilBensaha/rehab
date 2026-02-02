@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { useStore } from "@/lib/store"
+import { supabase } from "@/lib/supabaseClient"
 import { isSuperRole } from "@/lib/utils"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,11 +17,45 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 export default function TreasurePage() {
   const { t } = useTranslations()
-  const { products, companies, workers, currentUser, setProducts } = useStore()
+  const { products, currentUser, setProducts } = useStore()
 
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [isResetOpen, setIsResetOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  
+  // Load companies and workers with their benefit/fee data from Supabase
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string; benefit: number }>>([])
+  const [workers, setWorkers] = useState<Array<{ id: string; name: string; commission: number }>>([])
+
+  useEffect(() => {
+    const loadData = async () => {
+      const [{ data: companiesData }, { data: workersData }] = await Promise.all([
+        supabase.from("companies").select("id, name, combenef"),
+        supabase.from("delivery_workers").select("id, name, product_fee"),
+      ])
+
+      if (companiesData) {
+        setCompanies(
+          companiesData.map((c) => ({
+            id: String(c.id),
+            name: c.name,
+            benefit: Number(c.combenef || 0),
+          }))
+        )
+      }
+
+      if (workersData) {
+        setWorkers(
+          workersData.map((w) => ({
+            id: String(w.id),
+            name: w.name,
+            commission: Number(w.product_fee || 0),
+          }))
+        )
+      }
+    }
+    loadData()
+  }, [])
 
   const delivered = products.filter((p) => p.status === "delivered")
 
