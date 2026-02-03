@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Search, Filter } from "lucide-react"
 
 function StockContent() {
-  const { currentUser, locale, setProducts: setStoreProducts } = useStore()
+  const { currentUser, locale, setProducts: setStoreProducts, products: storeProducts } = useStore()
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [search, setSearch] = useState("")
@@ -105,9 +105,10 @@ function StockContent() {
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
-    const customId = newProduct.productId.trim() || null
+    const customId = newProduct.productId.trim()
+    if (!customId) return
     const payload = {
-      id: customId || undefined,
+      id: customId,
       clientName: newProduct.clientName,
       phone: newProduct.phone,
       price: newProduct.price,
@@ -127,21 +128,19 @@ function StockContent() {
           setProducts((prev) => [body.product, ...prev])
           setIsAddOpen(false)
           setNewProduct({ productId: "", clientName: "", companyId: "", phone: "", price: 0 })
-          setStoreProducts((prev) => {
-            const companyName = companies.find((c) => String(c.id) === String(body.product.company_id))?.name
-            return [
-              {
-                id: String(body.product.id),
-                clientName: body.product.client_name,
-                companyName: body.product.company_id ? companyName || String(body.product.company_id) : "-",
-                phone: body.product.phone,
-                price: Number(body.product.price || 0),
-                status: normalizeStatus(body.product.status),
-                workerId: body.product.delivery_worker_id ? String(body.product.delivery_worker_id) : undefined,
-              },
-              ...prev,
-            ]
-          })
+          const companyName = companies.find((c) => String(c.id) === String(body.product.company_id))?.name
+          setStoreProducts([
+            {
+              id: String(body.product.id),
+              clientName: body.product.client_name,
+              companyName: body.product.company_id ? companyName || String(body.product.company_id) : "-",
+              phone: body.product.phone,
+              price: Number(body.product.price || 0),
+              status: normalizeStatus(body.product.status),
+              workerId: body.product.delivery_worker_id ? String(body.product.delivery_worker_id) : undefined,
+            },
+            ...(storeProducts || []),
+          ])
           return
         }
       }
@@ -152,7 +151,7 @@ function StockContent() {
     const { data, error } = await supabase
       .from("products")
       .insert({
-        ...(customId ? { id: customId } : {}),
+        id: customId,
         client_name: newProduct.clientName,
         phone: newProduct.phone,
         price: newProduct.price,
@@ -165,21 +164,19 @@ function StockContent() {
       setProducts((prev) => [data, ...prev])
       setIsAddOpen(false)
       setNewProduct({ productId: "", clientName: "", companyId: "", phone: "", price: 0 })
-      setStoreProducts((prev) => {
-        const companyName = companies.find((c) => String(c.id) === String(data.company_id))?.name
-        return [
-          {
-            id: String(data.id),
-            clientName: data.client_name,
-            companyName: data.company_id ? companyName || String(data.company_id) : "-",
-            phone: data.phone,
-            price: Number(data.price || 0),
-            status: normalizeStatus(data.status),
-            workerId: data.delivery_worker_id ? String(data.delivery_worker_id) : undefined,
-          },
-          ...prev,
-        ]
-      })
+      const companyName = companies.find((c) => String(c.id) === String(data.company_id))?.name
+      setStoreProducts([
+        {
+          id: String(data.id),
+          clientName: data.client_name,
+          companyName: data.company_id ? companyName || String(data.company_id) : "-",
+          phone: data.phone,
+          price: Number(data.price || 0),
+          status: normalizeStatus(data.status),
+          workerId: data.delivery_worker_id ? String(data.delivery_worker_id) : undefined,
+        },
+        ...(storeProducts || []),
+      ])
     } else if (error) {
       console.error("Create product failed", error)
     }
@@ -224,13 +221,14 @@ function StockContent() {
               </DialogHeader>
               <form onSubmit={handleAddProduct} className="space-y-4 pt-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="productId">{t.common.id} ({t.common.optional || "optional"})</Label>
+                  <Label htmlFor="productId">{t.common.id}</Label>
                   <Input
                     id="productId"
                     type="text"
+                    required
                     value={newProduct.productId}
                     onChange={(e) => setNewProduct({ ...newProduct, productId: e.target.value })}
-                    placeholder={t.stock.idPlaceholder || "Auto-assigned if left blank (letters or numbers allowed)"}
+                    placeholder={t.stock.idPlaceholder || "Scan or type ID"}
                     autoComplete="off"
                     autoCapitalize="off"
                     autoCorrect="off"

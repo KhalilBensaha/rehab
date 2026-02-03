@@ -16,6 +16,7 @@ export const translations = {
       edit: "Edit",
       id: "ID",
       optional: "optional",
+      loading: "Loading...",
     },
     login: {
       title: "REHAB Login",
@@ -91,7 +92,7 @@ export const translations = {
         status: "Status",
         actions: "Actions",
       },
-      idPlaceholder: "Scan or type ID (auto-assigned if blank)",
+      idPlaceholder: "Scan or type ID",
       status: {
         inStock: "In Stock",
         delivery: "Delivery",
@@ -184,6 +185,10 @@ export const translations = {
       notProvided: "(not provided)",
       admin: "Admin",
       superAdmin: "Super Admin",
+      createFailedTitle: "Admin creation failed",
+      createFailedDesc: "Could not create admin. Please try again.",
+      createSuccessTitle: "Admin created",
+      createSuccessDesc: "{name} has been added as an admin.",
     },
     treasure: {
       title: "Treasure",
@@ -238,6 +243,7 @@ export const translations = {
       edit: "Modifier",
       id: "ID",
       optional: "optionnel",
+      loading: "Chargement...",
     },
     login: {
       title: "Connexion REHAB",
@@ -313,7 +319,7 @@ export const translations = {
         status: "Statut",
         actions: "Actions",
       },
-      idPlaceholder: "Scannez ou saisissez l'ID (automatique si vide)",
+      idPlaceholder: "Scannez ou saisissez l'ID",
       status: {
         inStock: "En stock",
         delivery: "En livraison",
@@ -406,6 +412,10 @@ export const translations = {
       notProvided: "(non fourni)",
       admin: "Admin",
       superAdmin: "Super Admin",
+      createFailedTitle: "Échec de création",
+      createFailedDesc: "Impossible de créer l'admin. Veuillez réessayer.",
+      createSuccessTitle: "Admin créé",
+      createSuccessDesc: "{name} a été ajouté comme admin.",
     },
     treasure: {
       title: "Trésorerie",
@@ -460,6 +470,7 @@ export const translations = {
       edit: "تعديل",
       id: "المعرف",
       optional: "اختياري",
+      loading: "جارٍ التحميل...",
     },
     login: {
       title: "تسجيل الدخول REHAB",
@@ -535,7 +546,7 @@ export const translations = {
         status: "الحالة",
         actions: "إجراءات",
       },
-      idPlaceholder: "امسح أو اكتب المعرف (يُعيّن تلقائياً إذا تُرك فارغاً)",
+      idPlaceholder: "امسح أو اكتب المعرف",
       status: {
         inStock: "في المخزون",
         delivery: "قيد التوصيل",
@@ -628,6 +639,10 @@ export const translations = {
       notProvided: "(غير متوفر)",
       admin: "مشرف",
       superAdmin: "مشرف متميز",
+      createFailedTitle: "فشل إنشاء المشرف",
+      createFailedDesc: "تعذر إنشاء المشرف. حاول مرة أخرى.",
+      createSuccessTitle: "تم إنشاء المشرف",
+      createSuccessDesc: "تمت إضافة {name} كمشرف.",
     },
     treasure: {
       title: "الخزينة",

@@ -15,12 +15,14 @@ import { Badge } from "@/components/ui/badge"
 import { UserPlus, Shield, ShieldCheck, MoreHorizontal, Eye, Trash2 } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useTranslations } from "@/lib/i18n"
+import { toast } from "@/hooks/use-toast"
 
 export default function AdminsPage() {
   const [admins, setAdmins] = useState<any[]>([])
   const [currentUser, setCurrentUserState] = useState<any>(null)
   const { t } = useTranslations()
   const [isAddOpen, setIsAddOpen] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
   const [selectedAdmin, setSelectedAdmin] = useState<any>(null)
   const [newAdmin, setNewAdmin] = useState({ username: "", password: "" })
 
@@ -63,15 +65,38 @@ export default function AdminsPage() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
-    const email = `${newAdmin.username}@rehab.local`
-    const { data, error } = await supabase.auth.signUp({ email, password: newAdmin.password })
-    if (error || !data.user) return
-    await supabase.from("profiles").insert({ id: data.user.id, role: "admin" })
-    if (data.user) {
-      setAdmins((prev) => [{ id: data.user.id, role: "admin", email, name: newAdmin.username }, ...prev])
+    if (isCreating) return
+    setIsCreating(true)
+    try {
+      const res = await fetch("/api/admins/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: newAdmin.username, password: newAdmin.password }),
+      })
+
+      const body = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        toast({
+          variant: "destructive",
+          title: t("adminsSection.createFailedTitle"),
+          description: body?.error || t("adminsSection.createFailedDesc"),
+        })
+        return
+      }
+
+      if (body.admin) {
+        setAdmins((prev) => [body.admin, ...prev])
+        setIsAddOpen(false)
+        setNewAdmin({ username: "", password: "" })
+        toast({
+          title: t("adminsSection.createSuccessTitle"),
+          description: t("adminsSection.createSuccessDesc", { name: body.admin.name || newAdmin.username }),
+        })
+      }
+    } finally {
+      setIsCreating(false)
     }
-    setIsAddOpen(false)
-    setNewAdmin({ username: "", password: "" })
   }
 
   return (
@@ -112,8 +137,8 @@ export default function AdminsPage() {
                     onChange={(e) => setNewAdmin({ ...newAdmin, password: e.target.value })}
                   />
                 </div>
-                <Button type="submit" className="w-full mt-4">
-                  {t("adminsSection.createAdminAccount")}
+                <Button type="submit" className="w-full mt-4" disabled={isCreating}>
+                  {isCreating ? t("common.loading") : t("adminsSection.createAdminAccount")}
                 </Button>
               </form>
             </DialogContent>
@@ -137,7 +162,7 @@ export default function AdminsPage() {
                   onClick={() => setSelectedAdmin(admin)}
                 >
                   <TableCell>
-                    <div className="font-medium">{admin.name || admin.email || admin.id}</div>
+                    <div className="font-medium">{admin.name || admin.id}</div>
                     <div className="text-xs text-muted-foreground">{admin.email || admin.id}</div>
                   </TableCell>
                   <TableCell>
@@ -188,7 +213,7 @@ export default function AdminsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-xs text-muted-foreground">{t("adminsSection.name")}</Label>
-                    <p className="font-medium break-all">{selectedAdmin.name || selectedAdmin.email || selectedAdmin.id}</p>
+                    <p className="font-medium break-all">{selectedAdmin.name || selectedAdmin.id}</p>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">{t("adminsSection.emailAddress")}</Label>

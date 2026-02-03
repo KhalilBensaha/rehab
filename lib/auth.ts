@@ -16,9 +16,9 @@ export async function login(identifier: string, password: string) {
 }
 
 export async function getUserRole(userId: string) {
-  const { data, error } = await supabase.from('profiles').select('role').eq('id', userId).single();
+  const { data, error } = await supabase.from('profiles').select('role').eq('id', userId).limit(1);
   if (error) throw error;
-  const raw = data.role || '';
+  const raw = data?.[0]?.role || '';
   const normalized = raw.toLowerCase().replace(/[_\s-]+/g, '');
   return normalized === 'superadmin' ? 'superadmin' : raw;
 }
