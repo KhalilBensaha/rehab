@@ -14,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, Phone, DollarSign, FileCheck, Package } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { useTranslations } from "@/lib/i18n"
@@ -26,6 +27,9 @@ export default function WorkersPage() {
   const [loading, setLoading] = useState(false)
   const [selectedWorkerForProducts, setSelectedWorkerForProducts] = useState<any | null>(null)
   const [isProductsDialogOpen, setIsProductsDialogOpen] = useState(false)
+  const [productToAssign, setProductToAssign] = useState("")
+  const [productIdInput, setProductIdInput] = useState("")
+  const [assigningProduct, setAssigningProduct] = useState(false)
 
   const [newWorker, setNewWorker] = useState({
     name: "",
@@ -75,6 +79,52 @@ export default function WorkersPage() {
         title: t("workers.toastDeliveredTitle"),
         description: t("workers.toastDeliveredDesc"),
       })
+    }
+  }
+
+  const handleAssignProduct = async (explicitId?: string) => {
+    const productId = (explicitId || productToAssign).trim()
+    if (!selectedWorkerForProducts || !productId) return
+    const product = products.find((p) => p.id === productId)
+    if (!product) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: t("workers.productNotFound"),
+      })
+      return
+    }
+    if (product.workerId) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: t("workers.productAlreadyAssigned"),
+      })
+      return
+    }
+    setAssigningProduct(true)
+    try {
+      await supabase
+        .from("products")
+        .update({ delivery_worker_id: selectedWorkerForProducts.id, status: "delivery" })
+        .eq("id", productId)
+
+      const updated = products.map((p) =>
+        p.id === productId
+          ? { ...p, workerId: String(selectedWorkerForProducts.id), status: "delivery" }
+          : p,
+      )
+      setStoreProducts(updated)
+      setProductToAssign("")
+      setProductIdInput("")
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: err?.message || t("workers.toastUpdateFailedDesc"),
+      })
+    } finally {
+      setAssigningProduct(false)
     }
   }
 
@@ -465,7 +515,16 @@ export default function WorkersPage() {
       </Dialog>
 
       {/* Assigned Products Dialog */}
-      <Dialog open={isProductsDialogOpen} onOpenChange={setIsProductsDialogOpen}>
+      <Dialog
+        open={isProductsDialogOpen}
+        onOpenChange={(open) => {
+          setIsProductsDialogOpen(open)
+          if (!open) {
+            setProductToAssign("")
+            setProductIdInput("")
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-5xl w-full max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -473,7 +532,53 @@ export default function WorkersPage() {
               {t("workers.assignedProductsTitle", { name: selectedWorkerForProducts?.name || "" })}
             </DialogTitle>
           </DialogHeader>
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-wrap items-end gap-3 rounded-md border p-4">
+              <div className="grid gap-2 min-w-[240px]">
+                <Label>{t("workers.assignProduct")}</Label>
+                <Select value={productToAssign} onValueChange={setProductToAssign}>
+                  <SelectTrigger className="min-w-[240px]">
+                    <SelectValue placeholder={t("workers.assignSelect")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products
+                      .filter((p) => !p.workerId && normalizeStatus(p.status) === "in_stock")
+                      .map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.id} — {p.clientName}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2 min-w-[240px]">
+                <Label htmlFor="assignById">{t("workers.assignById")}</Label>
+                <Input
+                  id="assignById"
+                  value={productIdInput}
+                  onChange={(e) => setProductIdInput(e.target.value)}
+                  placeholder={t("workers.assignByIdPlaceholder")}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  inputMode="text"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      handleAssignProduct(productIdInput)
+                    }
+                  }}
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={() => handleAssignProduct(productIdInput || productToAssign)}
+                disabled={assigningProduct || !selectedWorkerForProducts || (!productToAssign && !productIdInput)}
+              >
+                {assigningProduct ? t("workers.assigning") : t("workers.assignConfirm")}
+              </Button>
+            </div>
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
