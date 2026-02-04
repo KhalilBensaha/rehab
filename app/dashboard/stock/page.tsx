@@ -286,6 +286,9 @@ function StockContent() {
 
   const handleStatusChange = async (id: number, status: ProductStatus) => {
     setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)))
+    setStoreProducts(
+      (storeProducts || []).map((p) => (String(p.id) === String(id) ? { ...p, status } : p)),
+    )
     await supabase.from("products").update({ status }).eq("id", id)
   }
 

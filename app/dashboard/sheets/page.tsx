@@ -14,10 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Search, UserCircle, ExternalLink, ArrowRightLeft } from "lucide-react"
 import { useTranslations } from "@/lib/i18n"
+import { toast } from "@/hooks/use-toast"
 
 function SheetsContent() {
   const { t } = useTranslations()
-  const { workers, products, assignProduct, detachProduct, setWorkers, setProducts } = useStore()
+  const { workers, products, assignProduct, detachProduct, setWorkers, setProducts, updateProductStatus } = useStore()
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null)
   const [isAssignOpen, setIsAssignOpen] = useState(false)
   const [productToAssign, setProductToAssign] = useState<string>("")
@@ -128,6 +129,20 @@ function SheetsContent() {
     detachProduct(productId)
   }
 
+  const handleMarkDelivered = async (productId: string) => {
+    const deliveredAt = new Date().toISOString()
+    await supabase
+      .from("products")
+      .update({ status: "delivered", delivered_at: deliveredAt })
+      .eq("id", productId)
+
+    updateProductStatus(productId, "delivered")
+    toast({
+      title: t("workers.toastDeliveredTitle"),
+      description: t("workers.toastDeliveredDesc"),
+    })
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -211,14 +226,23 @@ function SheetsContent() {
                                 ✓ {t("stock.status.delivered")}
                               </Badge>
                             ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive"
-                                onClick={() => handleDetach(p.id)}
-                              >
-                                {t("sheets.detach")}
-                              </Button>
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleMarkDelivered(p.id)}
+                                >
+                                  {t("stock.status.delivered")}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive"
+                                  onClick={() => handleDetach(p.id)}
+                                >
+                                  {t("sheets.detach")}
+                                </Button>
+                              </div>
                             )}
                           </TableCell>
                         </TableRow>
