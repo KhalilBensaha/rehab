@@ -19,6 +19,7 @@ import Image from "next/image"
 export default function LoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
   const { admins, setCurrentUser, locale } = useStore()
   const t = translations[locale || "en"]
   const dir = t.dir
@@ -26,6 +27,8 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
     try {
       const { data, error } = await login(username, password);
       if (error || !data.user) {
@@ -34,6 +37,7 @@ export default function LoginPage() {
           title: t.login.failed,
           description: error?.message || t.login.userNotFound,
         });
+        setIsLoggingIn(false);
         return;
       }
       // Fetch user role
@@ -48,6 +52,8 @@ export default function LoginPage() {
         title: t.login.failed,
         description: err.message || t.login.userNotFound,
       });
+    } finally {
+      setIsLoggingIn(false);
     }
   }
 
@@ -96,8 +102,8 @@ export default function LoginPage() {
             </div>
           </CardContent>
           <CardFooter>
-            <Button className="w-full" type="submit">
-              {t.login.submit}
+            <Button className="w-full" type="submit" disabled={isLoggingIn}>
+              {isLoggingIn ? t.common.loading : t.login.submit}
             </Button>
           </CardFooter>
         </form>

@@ -14,16 +14,22 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, Phone, DollarSign, FileCheck, Package } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { useTranslations } from "@/lib/i18n"
 
 export default function WorkersPage() {
+  const { t } = useTranslations()
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [workers, setWorkers] = useState<Array<any>>([])
   const { setWorkers: setStoreWorkers, setProducts: setStoreProducts, products, updateProductStatus } = useStore()
   const [loading, setLoading] = useState(false)
   const [selectedWorkerForProducts, setSelectedWorkerForProducts] = useState<any | null>(null)
   const [isProductsDialogOpen, setIsProductsDialogOpen] = useState(false)
+  const [productToAssign, setProductToAssign] = useState("")
+  const [productIdInput, setProductIdInput] = useState("")
+  const [assigningProduct, setAssigningProduct] = useState(false)
 
   const [newWorker, setNewWorker] = useState({
     name: "",
@@ -47,6 +53,15 @@ export default function WorkersPage() {
     return "in_stock"
   }
 
+  const statusLabel = (status: string) => {
+    const normalized = normalizeStatus(status)
+    if (normalized === "in_stock") return t("stock.status.inStock")
+    if (normalized === "delivery") return t("stock.status.delivery")
+    if (normalized === "delivered") return t("stock.status.delivered")
+    if (normalized === "canceled") return t("stock.status.canceled")
+    return normalized
+  }
+
   const handleMarkStatus = async (productId: string, status: ProductStatus) => {
     updateProductStatus(productId, status)
     
@@ -61,9 +76,55 @@ export default function WorkersPage() {
     
     if (status === "delivered") {
       toast({
-        title: "Product Delivered",
-        description: "The product has been marked as delivered and saved to history.",
+        title: t("workers.toastDeliveredTitle"),
+        description: t("workers.toastDeliveredDesc"),
       })
+    }
+  }
+
+  const handleAssignProduct = async (explicitId?: string) => {
+    const productId = (explicitId || productToAssign).trim()
+    if (!selectedWorkerForProducts || !productId) return
+    const product = products.find((p) => p.id === productId)
+    if (!product) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: t("workers.productNotFound"),
+      })
+      return
+    }
+    if (product.workerId) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: t("workers.productAlreadyAssigned"),
+      })
+      return
+    }
+    setAssigningProduct(true)
+    try {
+      await supabase
+        .from("products")
+        .update({ delivery_worker_id: selectedWorkerForProducts.id, status: "delivery" })
+        .eq("id", productId)
+
+      const updated = products.map((p) =>
+        p.id === productId
+          ? { ...p, workerId: String(selectedWorkerForProducts.id), status: "delivery" }
+          : p,
+      )
+      setStoreProducts(updated)
+      setProductToAssign("")
+      setProductIdInput("")
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: err?.message || t("workers.toastUpdateFailedDesc"),
+      })
+    } finally {
+      setAssigningProduct(false)
     }
   }
 
@@ -118,7 +179,7 @@ export default function WorkersPage() {
   const uploadFile = async (file: File, folder: string) => {
     const bucket = process.env.NEXT_PUBLIC_SUPABASE_WORKERS_BUCKET || "workers"
     if (!bucket) {
-      throw new Error("Storage bucket name missing (set NEXT_PUBLIC_SUPABASE_WORKERS_BUCKET or create 'workers')")
+      throw new Error(t("workers.bucketMissing"))
     }
     const path = `${folder}/${crypto.randomUUID()}-${file.name}`
     const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
@@ -129,7 +190,7 @@ export default function WorkersPage() {
 
     const { data } = supabase.storage.from(bucket).getPublicUrl(path)
     if (!data?.publicUrl) {
-      throw new Error("Could not get public URL for uploaded file.")
+      throw new Error(t("workers.publicUrlMissing"))
     }
     return data.publicUrl
   }
@@ -166,8 +227,8 @@ export default function WorkersPage() {
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Upload failed",
-        description: err?.message || err?.error || "Could not save worker. Check storage permissions and bucket name.",
+        title: t("workers.toastUploadFailedTitle"),
+        description: err?.message || err?.error || t("workers.toastUploadFailedDesc"),
       })
     }
   }
@@ -215,8 +276,8 @@ export default function WorkersPage() {
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Update failed",
-        description: err?.message || err?.error || "Could not update worker.",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: err?.message || err?.error || t("workers.toastUpdateFailedDesc"),
       })
     }
   }
@@ -233,22 +294,22 @@ export default function WorkersPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Delivery Workers</h1>
-            <p className="text-muted-foreground">Manage your delivery team and their commissions.</p>
+            <h1 className="text-2xl font-bold">{t("workers.title")}</h1>
+            <p className="text-muted-foreground">{t("workers.subtitle")}</p>
           </div>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
-                <Plus className="h-4 w-4" /> Add Worker
+                <Plus className="h-4 w-4" /> {t("workers.add")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add New Delivery Worker</DialogTitle>
+                <DialogTitle>{t("workers.dialogTitle")}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleAddWorker} className="space-y-4 pt-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="name">Full Name</Label>
+                  <Label htmlFor="name">{t("workers.name")}</Label>
                   <Input
                     id="name"
                     required
@@ -257,7 +318,7 @@ export default function WorkersPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="phone">Phone Number</Label>
+                  <Label htmlFor="phone">{t("workers.phone")}</Label>
                   <Input
                     id="phone"
                     required
@@ -266,7 +327,7 @@ export default function WorkersPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="commission">Commission per Delivery (DZD)</Label>
+                  <Label htmlFor="commission">{t("workers.commission")}</Label>
                   <Input
                     id="commission"
                     type="number"
@@ -279,7 +340,7 @@ export default function WorkersPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <label className="cursor-pointer border-2 border-dashed rounded-md p-4 flex flex-col items-center justify-center text-xs text-muted-foreground">
                     <Plus className="h-4 w-4 mb-1" />
-                    {profileFile ? profileFile.name : "Profile Pic"}
+                    {profileFile ? profileFile.name : t("workers.profilePic")}
                     <input
                       type="file"
                       accept="image/*"
@@ -289,7 +350,7 @@ export default function WorkersPage() {
                   </label>
                   <label className="cursor-pointer border-2 border-dashed rounded-md p-4 flex flex-col items-center justify-center text-xs text-muted-foreground">
                     <FileCheck className="h-4 w-4 mb-1" />
-                    {certificateFile ? certificateFile.name : "Certificates"}
+                    {certificateFile ? certificateFile.name : t("workers.certificates")}
                     <input
                       type="file"
                       accept="image/*,application/pdf"
@@ -299,7 +360,7 @@ export default function WorkersPage() {
                   </label>
                 </div>
                 <Button type="submit" className="w-full mt-4">
-                  Register Worker
+                  {t("workers.submit")}
                 </Button>
               </form>
             </DialogContent>
@@ -310,7 +371,7 @@ export default function WorkersPage() {
           {workers.map((worker) => (
             <Card key={worker.id} className="overflow-hidden">
               <CardContent className="p-0">
-                <div className="bg-gradient-to-r from-rehab-gradient-start to-rehab-gradient-end h-20" />
+                <div className="bg-linear-to-r from-rehab-gradient-start to-rehab-gradient-end h-20" />
                 <div className="px-6 pb-6 text-center">
                   <div className="-mt-10 mb-4 flex justify-center">
                     <Avatar className="h-20 w-20 border-4 border-background shadow-lg">
@@ -319,7 +380,9 @@ export default function WorkersPage() {
                     </Avatar>
                   </div>
                   <h3 className="font-bold text-lg">{worker.name}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">ID: {worker.id}</p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {t("workers.idLabel")}: {worker.id}
+                  </p>
 
                   <div className="space-y-2 text-sm text-left">
                     <div className="flex items-center gap-2">
@@ -328,13 +391,15 @@ export default function WorkersPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <DollarSign className="h-3 w-3 text-primary" />
-                      <span>{worker.product_fee} DZD / delivery</span>
+                      <span>
+                        {worker.product_fee} {t("common.currency")} {t("workers.perDelivery")}
+                      </span>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 mt-6">
                     <Button variant="outline" size="sm" className="w-full bg-transparent" onClick={() => openEdit(worker)}>
-                      Edit Profile
+                      {t("workers.edit")}
                     </Button>
                     <Button
                       variant="destructive"
@@ -342,7 +407,7 @@ export default function WorkersPage() {
                       className="w-full"
                       onClick={() => handleDeleteWorker(worker.id)}
                     >
-                      Delete
+                      {t("workers.delete")}
                     </Button>
                   </div>
 
@@ -357,7 +422,7 @@ export default function WorkersPage() {
                       }}
                     >
                       <Package className="h-4 w-4" />
-                      Assigned Products ({products.filter((p) => p.workerId === String(worker.id)).length})
+                      {t("workers.assignedProducts")} ({products.filter((p) => p.workerId === String(worker.id)).length})
                     </Button>
                   </div>
                 </div>
@@ -366,7 +431,7 @@ export default function WorkersPage() {
           ))}
           {workers.length === 0 && (
             <div className="col-span-full py-12 text-center text-muted-foreground border-2 border-dashed rounded-xl">
-              No workers registered yet.
+              {t("workers.empty")}
             </div>
           )}
         </div>
@@ -375,12 +440,12 @@ export default function WorkersPage() {
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Worker Profile</DialogTitle>
+            <DialogTitle>{t("workers.editTitle")}</DialogTitle>
           </DialogHeader>
           {editingWorker && (
             <form onSubmit={handleUpdateWorker} className="space-y-4 pt-2">
               <div className="grid gap-2">
-                <Label>Full Name</Label>
+                <Label>{t("workers.name")}</Label>
                 <Input
                   value={editingWorker.name}
                   onChange={(e) => setEditingWorker({ ...editingWorker, name: e.target.value })}
@@ -388,7 +453,7 @@ export default function WorkersPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>Phone Number</Label>
+                <Label>{t("workers.phone")}</Label>
                 <Input
                   value={editingWorker.phone}
                   onChange={(e) => setEditingWorker({ ...editingWorker, phone: e.target.value })}
@@ -396,7 +461,7 @@ export default function WorkersPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>Commission per Delivery (DZD)</Label>
+                <Label>{t("workers.commission")}</Label>
                 <Input
                   type="number"
                   value={editingWorker.product_fee}
@@ -408,9 +473,9 @@ export default function WorkersPage() {
               <div className="grid grid-cols-2 gap-4">
                 <label className="cursor-pointer border-2 border-dashed rounded-md p-4 flex flex-col items-center justify-center text-xs text-muted-foreground">
                   <Plus className="h-4 w-4 mb-1" />
-                  {editProfileFile ? editProfileFile.name : "Profile Pic"}
+                  {editProfileFile ? editProfileFile.name : t("workers.profilePic")}
                   {editingWorker.profile_image_url && !editProfileFile && (
-                    <span className="text-[11px] text-muted-foreground mt-1">Current: set</span>
+                    <span className="text-[11px] text-muted-foreground mt-1">{t("workers.currentSet")}</span>
                   )}
                   <input
                     type="file"
@@ -421,7 +486,7 @@ export default function WorkersPage() {
                 </label>
                 <label className="cursor-pointer border-2 border-dashed rounded-md p-4 flex flex-col items-center justify-center text-xs text-muted-foreground">
                   <FileCheck className="h-4 w-4 mb-1" />
-                  {editCertificateFile ? editCertificateFile.name : "Certificate"}
+                  {editCertificateFile ? editCertificateFile.name : t("workers.certificates")}
                   {editingWorker.certificate_image_url && !editCertificateFile && (
                     <a
                       className="text-[11px] text-primary underline mt-1"
@@ -429,7 +494,7 @@ export default function WorkersPage() {
                       target="_blank"
                       rel="noreferrer"
                     >
-                      View current
+                      {t("workers.viewCurrent")}
                     </a>
                   )}
                   <input
@@ -442,7 +507,7 @@ export default function WorkersPage() {
               </div>
 
               <Button type="submit" className="w-full mt-2">
-                Save Changes
+                {t("common.save")}
               </Button>
             </form>
           )}
@@ -450,25 +515,80 @@ export default function WorkersPage() {
       </Dialog>
 
       {/* Assigned Products Dialog */}
-      <Dialog open={isProductsDialogOpen} onOpenChange={setIsProductsDialogOpen}>
+      <Dialog
+        open={isProductsDialogOpen}
+        onOpenChange={(open) => {
+          setIsProductsDialogOpen(open)
+          if (!open) {
+            setProductToAssign("")
+            setProductIdInput("")
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-5xl w-full max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Package className="h-5 w-5" />
-              Assigned Products - {selectedWorkerForProducts?.name}
+              {t("workers.assignedProductsTitle", { name: selectedWorkerForProducts?.name || "" })}
             </DialogTitle>
           </DialogHeader>
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-wrap items-end gap-3 rounded-md border p-4">
+              <div className="grid gap-2 min-w-[240px]">
+                <Label>{t("workers.assignProduct")}</Label>
+                <Select value={productToAssign} onValueChange={setProductToAssign}>
+                  <SelectTrigger className="min-w-[240px]">
+                    <SelectValue placeholder={t("workers.assignSelect")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products
+                      .filter((p) => !p.workerId && normalizeStatus(p.status) === "in_stock")
+                      .map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.id} — {p.clientName}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2 min-w-[240px]">
+                <Label htmlFor="assignById">{t("workers.assignById")}</Label>
+                <Input
+                  id="assignById"
+                  value={productIdInput}
+                  onChange={(e) => setProductIdInput(e.target.value)}
+                  placeholder={t("workers.assignByIdPlaceholder")}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  inputMode="text"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      handleAssignProduct(productIdInput)
+                    }
+                  }}
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={() => handleAssignProduct(productIdInput || productToAssign)}
+                disabled={assigningProduct || !selectedWorkerForProducts || (!productToAssign && !productIdInput)}
+              >
+                {assigningProduct ? t("workers.assigning") : t("workers.assignConfirm")}
+              </Button>
+            </div>
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Company</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead>{t("stock.table.id")}</TableHead>
+                    <TableHead>{t("stock.table.client")}</TableHead>
+                    <TableHead>{t("stock.table.company")}</TableHead>
+                    <TableHead>{t("stock.table.price")}</TableHead>
+                    <TableHead>{t("stock.table.status")}</TableHead>
+                    <TableHead className="text-right">{t("common.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -477,7 +597,7 @@ export default function WorkersPage() {
                       <TableCell className="font-mono text-xs">{p.id}</TableCell>
                       <TableCell>{p.clientName}</TableCell>
                       <TableCell>{p.companyName}</TableCell>
-                      <TableCell>{p.price} DZD</TableCell>
+                      <TableCell>{p.price} {t("common.currency")}</TableCell>
                       <TableCell>
                         <Badge
                           variant={
@@ -489,21 +609,21 @@ export default function WorkersPage() {
                           }
                           className="capitalize"
                         >
-                          {normalizeStatus(p.status)}
+                          {statusLabel(p.status)}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         {normalizeStatus(p.status) === "delivered" ? (
                           <div className="flex justify-end gap-2">
                             <Badge variant="secondary" className="bg-green-100 text-green-800">
-                              ✓ Delivered
+                              ✓ {t("stock.status.delivered")}
                             </Badge>
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => handleMarkStatus(p.id, "delivery")}
                             >
-                              Back to Delivery
+                              {t("workers.backToDelivery")}
                             </Button>
                           </div>
                         ) : (
@@ -513,7 +633,7 @@ export default function WorkersPage() {
                               variant="secondary"
                               onClick={() => handleMarkStatus(p.id, "delivered")}
                             >
-                              Delivered
+                              {t("stock.status.delivered")}
                             </Button>
                             <Button
                               size="sm"
@@ -521,7 +641,7 @@ export default function WorkersPage() {
                               className="text-destructive"
                               onClick={() => handleMarkStatus(p.id, "canceled")}
                             >
-                              Cancel
+                              {t("common.cancel")}
                             </Button>
                           </div>
                         )}
@@ -531,7 +651,7 @@ export default function WorkersPage() {
                   {selectedWorkerForProducts && products.filter((p) => p.workerId === String(selectedWorkerForProducts.id)).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">
-                        No products assigned to this worker.
+                        {t("workers.noAssignedProducts")}
                       </TableCell>
                     </TableRow>
                   )}

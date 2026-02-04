@@ -11,15 +11,18 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { Search, UserCircle, ExternalLink, ArrowRightLeft } from "lucide-react"
 import { useTranslations } from "@/lib/i18n"
+import { toast } from "@/hooks/use-toast"
 
 function SheetsContent() {
   const { t } = useTranslations()
-  const { workers, products, assignProduct, detachProduct, setWorkers, setProducts } = useStore()
+  const { workers, products, assignProduct, detachProduct, setWorkers, setProducts, updateProductStatus } = useStore()
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null)
   const [isAssignOpen, setIsAssignOpen] = useState(false)
   const [productToAssign, setProductToAssign] = useState<string>("")
+  const [productIdInput, setProductIdInput] = useState<string>("")
   const [assigning, setAssigning] = useState(false)
 
   const workerProducts = selectedWorker ? products.filter((p) => p.workerId === selectedWorker.id) : []
@@ -34,7 +37,7 @@ function SheetsContent() {
     return normalized.replace("_", " ")
   }
 
-  const availableProducts = products.filter((p) => normalizeStatus(p.status) === "in_stock")
+  const availableProducts = products.filter((p) => normalizeStatus(p.status) === "in_stock" && !p.workerId)
 
   useEffect(() => {
     const load = async () => {
@@ -84,20 +87,39 @@ function SheetsContent() {
     load()
   }, [setProducts, setWorkers])
 
-  const handleAssign = async () => {
-    if (!selectedWorker || !productToAssign) return
+  const handleAssign = async (explicitId?: string) => {
+    const productId = (explicitId || productToAssign).trim()
+    if (!selectedWorker || !productId) return
+    const product = products.find((p) => p.id === productId)
+    if (!product) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: t("sheets.productNotFound"),
+      })
+      return
+    }
+    if (product.workerId) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: t("sheets.productAlreadyAssigned"),
+      })
+      return
+    }
     setAssigning(true)
     try {
       await supabase
         .from("products")
         .update({ delivery_worker_id: selectedWorker.id, status: "delivery" })
-        .eq("id", productToAssign)
+        .eq("id", productId)
 
-      assignProduct(productToAssign, selectedWorker.id)
+      assignProduct(productId, selectedWorker.id)
     } finally {
       setAssigning(false)
       setIsAssignOpen(false)
       setProductToAssign("")
+      setProductIdInput("")
     }
   }
 
@@ -105,6 +127,20 @@ function SheetsContent() {
     const newStatus: ProductStatus = "in_stock"
     await supabase.from("products").update({ delivery_worker_id: null, status: newStatus }).eq("id", productId)
     detachProduct(productId)
+  }
+
+  const handleMarkDelivered = async (productId: string) => {
+    const deliveredAt = new Date().toISOString()
+    await supabase
+      .from("products")
+      .update({ status: "delivered", delivered_at: deliveredAt })
+      .eq("id", productId)
+
+    updateProductStatus(productId, "delivered")
+    toast({
+      title: t("workers.toastDeliveredTitle"),
+      description: t("workers.toastDeliveredDesc"),
+    })
   }
 
   return (
@@ -190,14 +226,23 @@ function SheetsContent() {
                                 ✓ {t("stock.status.delivered")}
                               </Badge>
                             ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive"
-                                onClick={() => handleDetach(p.id)}
-                              >
-                                {t("sheets.detach")}
-                              </Button>
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleMarkDelivered(p.id)}
+                                >
+                                  {t("stock.status.delivered")}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive"
+                                  onClick={() => handleDetach(p.id)}
+                                >
+                                  {t("sheets.detach")}
+                                </Button>
+                              </div>
                             )}
                           </TableCell>
                         </TableRow>
@@ -223,7 +268,16 @@ function SheetsContent() {
         </div>
 
         {/* Assign Modal */}
-        <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
+        <Dialog
+          open={isAssignOpen}
+          onOpenChange={(open) => {
+            setIsAssignOpen(open)
+            if (!open) {
+              setProductToAssign("")
+              setProductIdInput("")
+            }
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{t("sheets.modalTitle", { name: selectedWorker?.name || "" })}</DialogTitle>
@@ -244,10 +298,30 @@ function SheetsContent() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="assignById">{t("sheets.assignById")}</Label>
+                <Input
+                  id="assignById"
+                  value={productIdInput}
+                  onChange={(e) => setProductIdInput(e.target.value)}
+                  placeholder={t("sheets.assignByIdPlaceholder")}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  inputMode="text"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      handleAssign(productIdInput)
+                    }
+                  }}
+                />
+              </div>
               <Button
                 className="w-full"
-                disabled={!productToAssign || assigning}
-                onClick={handleAssign}
+                disabled={assigning || (!productToAssign && !productIdInput)}
+                onClick={() => handleAssign(productIdInput || productToAssign)}
               >
                 {assigning ? t("sheets.assigning") : t("sheets.confirm")}
               </Button>
