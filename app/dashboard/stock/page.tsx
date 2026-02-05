@@ -474,29 +474,31 @@ function StockContent() {
                     <Upload className="h-4 w-4" /> {t.stock.import}
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="w-screen h-screen max-w-none sm:rounded-none p-4 overflow-auto">
+                <DialogContent className="w-screen h-screen max-w-none sm:rounded-none p-6 flex flex-col overflow-hidden">
                   <DialogHeader>
                     <DialogTitle>{t.stock.importTitle}</DialogTitle>
                   </DialogHeader>
-                  <div className="space-y-4 pt-4 min-h-full">
-                    <div className="grid gap-2">
-                      <Label>{t.stock.company}</Label>
-                      <Select value={bulkCompanyId} onValueChange={setBulkCompanyId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t.stock.company} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {companies.map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="bulkFile">{t.stock.importFile}</Label>
-                      <Input
+                  <div className="flex flex-col flex-1 gap-4 pt-2 min-h-0">
+                    {/* Controls row */}
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div className="grid gap-1.5 min-w-[200px]">
+                        <Label>{t.stock.company}</Label>
+                        <Select value={bulkCompanyId} onValueChange={setBulkCompanyId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t.stock.company} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {companies.map((c) => (
+                              <SelectItem key={c.id} value={String(c.id)}>
+                                {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-1.5 min-w-[250px] flex-1">
+                        <Label htmlFor="bulkFile">{t.stock.importFile}</Label>
+                        <Input
                         id="bulkFile"
                         type="file"
                         accept="application/pdf,image/*"
@@ -525,41 +527,41 @@ function StockContent() {
                           ))}
                         </div>
                       )}
-                    </div>
-                    <div className="flex gap-2 items-center">
-                      <Button
-                        type="button"
-                        disabled={!bulkCompanyId || bulkFiles.length === 0 || bulkLoading}
-                        onClick={handleBulkExtract}
-                      >
-                        {bulkLoading
-                          ? `${t.stock.importExtracting} (${bulkProgress.current}/${bulkProgress.total})`
-                          : t.stock.importExtract}
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={resetBulk}>
-                        {t.common.cancel}
-                      </Button>
+                      </div>
+                      <div className="flex gap-2 items-end">
+                        <Button
+                          type="button"
+                          disabled={!bulkCompanyId || bulkFiles.length === 0 || bulkLoading}
+                          onClick={handleBulkExtract}
+                        >
+                          {bulkLoading
+                            ? `${t.stock.importExtracting} (${bulkProgress.current}/${bulkProgress.total})`
+                            : t.stock.importExtract}
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={resetBulk}>
+                          {t.common.cancel}
+                        </Button>
+                      </div>
                       {bulkFiles.length > 0 && !bulkLoading && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground self-end pb-2">
                           {bulkFiles.length} file{bulkFiles.length > 1 ? "s" : ""} selected
                         </span>
                       )}
                     </div>
                     {bulkError && <div className="text-sm text-destructive">{bulkError}</div>}
                     {bulkItems.length > 0 ? (
-                      <div className="space-y-3">
-                        <div className="text-sm text-muted-foreground">{t.stock.importPreview}</div>
-                        <div className="overflow-auto rounded-md border">
-                          <div className="min-w-[1200px]">
-                            <Table className="table-fixed">
-                            <TableHeader>
+                      <div className="flex flex-col flex-1 min-h-0 gap-2">
+                        <div className="text-sm text-muted-foreground">{t.stock.importPreview} ({bulkItems.length})</div>
+                        <div className="flex-1 overflow-auto rounded-md border">
+                            <Table>
+                            <TableHeader className="sticky top-0 bg-background z-10">
                               <TableRow>
-                                <TableHead className="w-[180px]">{t.stock.table.id}</TableHead>
-                                <TableHead className="w-[220px]">{t.stock.table.client}</TableHead>
-                                <TableHead className="w-[200px]">{t.stock.phone}</TableHead>
-                                <TableHead className="w-[140px]">{t.stock.table.price}</TableHead>
-                                <TableHead className="w-[160px]">{t.stock.importStatus}</TableHead>
-                                <TableHead className="w-[90px] text-right">{t.common.actions}</TableHead>
+                                <TableHead className="min-w-[160px]">{t.stock.table.id}</TableHead>
+                                <TableHead className="min-w-[180px]">{t.stock.table.client}</TableHead>
+                                <TableHead className="min-w-[160px]">{t.stock.phone}</TableHead>
+                                <TableHead className="min-w-[120px]">{t.stock.table.price}</TableHead>
+                                <TableHead className="min-w-[120px]">{t.stock.importStatus}</TableHead>
+                                <TableHead className="w-[60px] text-right">{t.common.actions}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -639,9 +641,8 @@ function StockContent() {
                               ))}
                             </TableBody>
                             </Table>
-                          </div>
                         </div>
-                        <div className="sticky bottom-0 bg-background/95 backdrop-blur px-2 py-3 -mx-2 border-t">
+                        <div className="shrink-0 pt-3 border-t">
                           <Button
                             type="button"
                             onClick={handleBulkSubmit}
