@@ -37,9 +37,10 @@ function StockContent() {
   const [companies, setCompanies] = useState<any[]>([])
 
   const [bulkCompanyId, setBulkCompanyId] = useState("")
-  const [bulkFile, setBulkFile] = useState<File | null>(null)
+  const [bulkFiles, setBulkFiles] = useState<File[]>([])
   const [bulkItems, setBulkItems] = useState<BulkItem[]>([])
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 })
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkError, setBulkError] = useState<string>("")
 
@@ -125,40 +126,61 @@ function StockContent() {
 
   const resetBulk = () => {
     setBulkCompanyId("")
-    setBulkFile(null)
+    setBulkFiles([])
     setBulkItems([])
     setBulkLoading(false)
+    setBulkProgress({ current: 0, total: 0 })
     setBulkSubmitting(false)
     setBulkError("")
   }
 
   const handleBulkExtract = async () => {
-    if (!bulkCompanyId || !bulkFile) return
+    if (!bulkCompanyId || bulkFiles.length === 0) return
     setBulkLoading(true)
     setBulkError("")
-    try {
-      const formData = new FormData()
-      formData.append("file", bulkFile)
-      formData.append("companyId", bulkCompanyId)
-      const res = await fetch("/api/products/ocr", {
-        method: "POST",
-        body: formData,
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setBulkError(err?.error || "OCR failed")
-        setBulkItems([])
-        return
+    setBulkItems([])
+    setBulkProgress({ current: 0, total: bulkFiles.length })
+
+    const allItems: BulkItem[] = []
+    const errors: string[] = []
+
+    for (let i = 0; i < bulkFiles.length; i++) {
+      setBulkProgress({ current: i + 1, total: bulkFiles.length })
+      try {
+        const formData = new FormData()
+        formData.append("file", bulkFiles[i])
+        formData.append("companyId", bulkCompanyId)
+        const res = await fetch("/api/products/ocr", {
+          method: "POST",
+          body: formData,
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          errors.push(`${bulkFiles[i].name}: ${err?.error || "OCR failed"}`)
+          continue
+        }
+        const body = await res.json()
+        const items = Array.isArray(body?.items) ? body.items : []
+        allItems.push(...items)
+      } catch (err) {
+        console.error(`OCR failed for ${bulkFiles[i].name}`, err)
+        errors.push(`${bulkFiles[i].name}: OCR failed`)
       }
-      const body = await res.json()
-      setBulkItems(Array.isArray(body?.items) ? body.items : [])
-    } catch (err) {
-      console.error("OCR failed", err)
-      setBulkError("OCR failed")
-      setBulkItems([])
-    } finally {
-      setBulkLoading(false)
     }
+
+    // Deduplicate across all files
+    const uniqueMap = new Map<string, BulkItem>()
+    allItems.forEach((item) => {
+      if (item.trackingId && !uniqueMap.has(item.trackingId)) {
+        uniqueMap.set(item.trackingId, item)
+      }
+    })
+    setBulkItems(Array.from(uniqueMap.values()))
+
+    if (errors.length > 0) {
+      setBulkError(errors.join(" | "))
+    }
+    setBulkLoading(false)
   }
 
   const handleBulkSubmit = async () => {
@@ -478,20 +500,50 @@ function StockContent() {
                         id="bulkFile"
                         type="file"
                         accept="application/pdf,image/*"
-                        onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+                        multiple
+                        onChange={(e) => {
+                          const files = e.target.files
+                          if (files && files.length > 0) {
+                            setBulkFiles((prev) => [...prev, ...Array.from(files)])
+                          }
+                          e.target.value = ""
+                        }}
                       />
+                      {bulkFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {bulkFiles.map((file, i) => (
+                            <Badge key={`${file.name}-${i}`} variant="secondary" className="gap-1 pr-1">
+                              <span className="max-w-[150px] truncate text-xs">{file.name}</span>
+                              <button
+                                type="button"
+                                className="ml-1 rounded-full hover:bg-muted p-0.5"
+                                onClick={() => setBulkFiles((prev) => prev.filter((_, j) => j !== i))}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
                       <Button
                         type="button"
-                        disabled={!bulkCompanyId || !bulkFile || bulkLoading}
+                        disabled={!bulkCompanyId || bulkFiles.length === 0 || bulkLoading}
                         onClick={handleBulkExtract}
                       >
-                        {bulkLoading ? t.stock.importExtracting : t.stock.importExtract}
+                        {bulkLoading
+                          ? `${t.stock.importExtracting} (${bulkProgress.current}/${bulkProgress.total})`
+                          : t.stock.importExtract}
                       </Button>
                       <Button type="button" variant="ghost" onClick={resetBulk}>
                         {t.common.cancel}
                       </Button>
+                      {bulkFiles.length > 0 && !bulkLoading && (
+                        <span className="text-xs text-muted-foreground">
+                          {bulkFiles.length} file{bulkFiles.length > 1 ? "s" : ""} selected
+                        </span>
+                      )}
                     </div>
                     {bulkError && <div className="text-sm text-destructive">{bulkError}</div>}
                     {bulkItems.length > 0 ? (
