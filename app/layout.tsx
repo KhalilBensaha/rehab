@@ -25,7 +25,7 @@ export const metadata: Metadata = {
       },
       {
         url: "/rehab.png",
-        type: "image/svg+xml",
+        type: "image/png",
       },
     ],
     apple: "/rehab.png",
