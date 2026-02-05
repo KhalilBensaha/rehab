@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Search, Filter, Upload, Trash2 } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
 
 type BulkItem = {
   trackingId: string
@@ -178,6 +179,14 @@ function StockContent() {
       }
       const body = await res.json()
       const inserted = Array.isArray(body?.inserted) ? body.inserted : []
+      const skippedExisting = Array.isArray(body?.skippedExisting) ? body.skippedExisting : []
+      if (skippedExisting.length > 0) {
+        toast({
+          variant: "destructive",
+          title: t.stock.duplicateBulkTitle,
+          description: t.stock.duplicateBulkDesc.replace("{count}", String(skippedExisting.length)),
+        })
+      }
       if (inserted.length > 0) {
         setProducts((prev) => [...inserted, ...prev])
         const companyNameById = new Map<string, string>()
@@ -246,8 +255,32 @@ function StockContent() {
           return
         }
       }
+      const errorBody = await res.json().catch(() => ({}))
+      if (
+        res.status === 409 ||
+        errorBody?.code === "duplicate" ||
+        errorBody?.code === "23505" ||
+        String(errorBody?.error || "").toLowerCase().includes("duplicate")
+      ) {
+        toast({
+          variant: "destructive",
+          title: t.stock.duplicateTitle,
+          description: t.stock.duplicateDesc,
+        })
+        return
+      }
     } catch (err) {
       console.error("Create product API failed", err)
+    }
+
+    const { data: existing } = await supabase.from("products").select("id").eq("id", customId).maybeSingle()
+    if (existing?.id) {
+      toast({
+        variant: "destructive",
+        title: t.stock.duplicateTitle,
+        description: t.stock.duplicateDesc,
+      })
+      return
     }
 
     const { data, error } = await supabase
@@ -280,6 +313,14 @@ function StockContent() {
         ...(storeProducts || []),
       ])
     } else if (error) {
+      if (error.code === "23505" || String(error.message || "").toLowerCase().includes("duplicate")) {
+        toast({
+          variant: "destructive",
+          title: t.stock.duplicateTitle,
+          description: t.stock.duplicateDesc,
+        })
+        return
+      }
       console.error("Create product failed", error)
     }
   }

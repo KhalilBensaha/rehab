@@ -30,7 +30,13 @@ export async function POST(req: Request) {
     }
 
     const trimmedId = typeof id === 'string' ? id.trim() : ''
-    if (trimmedId) payload.id = trimmedId
+    if (trimmedId) {
+      const { data: existing } = await supabase.from('products').select('id').eq('id', trimmedId).maybeSingle()
+      if (existing?.id) {
+        return NextResponse.json({ error: 'duplicate id', code: 'duplicate' }, { status: 409 })
+      }
+      payload.id = trimmedId
+    }
 
     const { data, error } = await supabase.from('products').insert(payload).select().single()
 

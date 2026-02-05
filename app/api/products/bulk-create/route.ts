@@ -69,7 +69,11 @@ export async function POST(req: Request) {
       company_id: companyId || null,
     }))
 
-    const { data, error } = await supabase.from('products').insert(payload).select()
+    // Use upsert with ignoreDuplicates to skip any that slip through the check
+    const { data, error } = await supabase
+      .from('products')
+      .upsert(payload, { onConflict: 'id', ignoreDuplicates: true })
+      .select()
 
     if (error) {
       return NextResponse.json(
