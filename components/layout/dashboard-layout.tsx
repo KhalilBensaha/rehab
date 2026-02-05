@@ -4,6 +4,8 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useStore } from "@/lib/store"
+import { supabase } from "@/lib/supabaseClient"
+import { getUserRole } from "@/lib/auth"
 import { LayoutDashboard, Package, Truck, Building2, LogOut, ChevronRight, ClipboardList, UserPlus, PiggyBank, Menu, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn, isSuperRole } from "@/lib/utils"
@@ -17,15 +19,58 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [isCheckingSession, setIsCheckingSession] = useState(true)
 
   useEffect(() => {
     setMounted(true)
-    if (!currentUser && pathname !== "/login") {
-      router.push("/login")
-    }
-  }, [currentUser, pathname, router])
 
-  if (!mounted || !currentUser) return null
+    // Check Supabase session on mount
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          // If we have a Supabase session but no currentUser in store, restore it
+          if (!currentUser) {
+            const role = await getUserRole(session.user.id)
+            const email = session.user.email || ''
+            const name = email.split('@')[0] || 'User'
+            setCurrentUser({ id: session.user.id, name, email, role })
+          }
+        } else if (!currentUser && pathname !== "/login") {
+          router.push("/login")
+        }
+      } catch (err) {
+        console.error("Session check failed", err)
+        if (!currentUser && pathname !== "/login") {
+          router.push("/login")
+        }
+      } finally {
+        setIsCheckingSession(false)
+      }
+    }
+
+    checkSession()
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(null)
+        router.push("/login")
+      } else if (event === 'SIGNED_IN' && session?.user && !currentUser) {
+        const role = await getUserRole(session.user.id)
+        const email = session.user.email || ''
+        const name = email.split('@')[0] || 'User'
+        setCurrentUser({ id: session.user.id, name, email, role })
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [currentUser, pathname, router, setCurrentUser])
+
+  if (!mounted || isCheckingSession) return null
+  if (!currentUser) return null
 
   const isSuper = isSuperRole(currentUser.role)
   const t = translations[locale || "en"]
@@ -111,7 +156,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               "w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive",
               dir === "rtl" && "flex-row-reverse text-right",
             )}
-            onClick={() => {
+            onClick={async () => {
+              await supabase.auth.signOut()
               setCurrentUser(null)
               router.push("/login")
             }}
