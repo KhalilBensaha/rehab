@@ -32,6 +32,24 @@ function cleanJsonText(text: string) {
   return noFences
 }
 
+function tryParseJson(text: string): any | null {
+  try {
+    return JSON.parse(text)
+  } catch {
+    const arrStart = text.indexOf('[')
+    const arrEnd = text.lastIndexOf(']')
+    if (arrStart >= 0 && arrEnd > arrStart) {
+      const arrayText = text.slice(arrStart, arrEnd + 1)
+      try {
+        return JSON.parse(arrayText)
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}
+
 function normalizeItem(item: any) {
   const trackingId =
     (typeof item?.trackingId === 'string' && item.trackingId) ||
@@ -62,10 +80,61 @@ function normalizeItem(item: any) {
   }
 }
 
+function buildPrompt(companyId: string) {
+  const basePrompt = `Extract all product rows from this document. Return ONLY valid JSON with this format: {"items": [{"trackingId": "", "clientName": "", "phone": "", "price": 0}]}.
+
+Rules:
+- trackingId is the tracking number / numero de tracking.
+- clientName is the client name.
+- phone is the telephone.
+- price is numeric in DZD (no currency symbol).
+- If a field is missing, return an empty string or 0.`
+
+  const zrExpressPrompt = `You are extracting a ZR Express delivery list. The table columns are: Numero de tracking, Client, Telephone, Prix. Each ROW is a single product.
+
+Return ONLY valid JSON with this format: {"items": [{"trackingId": "", "clientName": "", "phone": "", "price": 0}]}.
+
+Rules:
+- trackingId must be copied exactly from "Numero de tracking" (keep hyphens and ZR suffix).
+- clientName must be copied exactly from "Client" (keep Arabic letters as-is, do NOT merge names from adjacent rows).
+- phone must be copied from "Telephone" (keep digits and spaces if any).
+- price must be numeric DZD from "Prix" (ignore 'DA' and thousand separators).
+- Do NOT use values from "Address" or "Produits" columns.
+- Each row becomes exactly one item in order.
+- If a cell is empty, return "" or 0 for that field.`
+
+  return companyId === '6' ? zrExpressPrompt : basePrompt
+}
+
+function extractItemsFromText(text: string) {
+  const cleaned = cleanJsonText(text)
+  const parsed = tryParseJson(cleaned)
+  if (!parsed) {
+    return { error: 'Failed to parse OCR result', items: [] as ReturnType<typeof normalizeItem>[] }
+  }
+
+  const itemsRaw = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : []
+  const normalized = itemsRaw.map(normalizeItem).filter((item) => item.trackingId)
+
+  const uniqueMap = new Map<string, (typeof normalized)[number]>()
+  const duplicateInUpload = new Set<string>()
+  normalized.forEach((item) => {
+    const id = item.trackingId
+    if (uniqueMap.has(id)) {
+      duplicateInUpload.add(id)
+    } else {
+      uniqueMap.set(id, item)
+    }
+  })
+
+  return { items: Array.from(uniqueMap.values()), duplicateInUpload }
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData()
     const file = formData.get('file')
+    const companyId = String(formData.get('companyId') || '').trim()
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'file required' }, { status: 400 })
@@ -82,8 +151,7 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(await file.arrayBuffer())
     const base64 = buffer.toString('base64')
 
-    const prompt = `Extract all product rows from this document. Return ONLY valid JSON with this format: {"items": [{"trackingId": "", "clientName": "", "phone": "", "price": 0}]}.\n\nRules:\n- trackingId is the tracking number / numero de tracking.\n- clientName is the client name.\n- phone is the telephone.\n- price is numeric in DZD (no currency symbol).\n- If a field is missing, return an empty string or 0.`
-
+    const prompt = buildPrompt(companyId)
     const content: any[] = [
       { type: 'text', text: prompt },
       isPdf
@@ -104,125 +172,56 @@ export async function POST(req: Request) {
       messages: [{ role: 'user', content }],
     }
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify(requestBody),
-    })
+    const callClaude = async (model: string) => {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({ ...requestBody, model }),
+      })
 
-    if (!claudeRes.ok) {
-      const errText = await claudeRes.text()
-      const isModelNotFound = errText.includes('not_found_error') || errText.toLowerCase().includes('model')
+      if (!res.ok) {
+        return { ok: false, error: await res.text() }
+      }
+
+      const body = await res.json()
+      const text = Array.isArray(body?.content) ? body.content.map((c: any) => c?.text || '').join('\n') : ''
+      return { ok: true, text }
+    }
+
+    let response = await callClaude(OCR_MODEL)
+    if (!response.ok) {
+      const isModelNotFound = response.error?.includes('not_found_error') || response.error?.toLowerCase().includes('model')
       if (isModelNotFound && OCR_FALLBACK_MODEL) {
-        const retryRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-api-key': process.env.ANTHROPIC_API_KEY || '',
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({ ...requestBody, model: OCR_FALLBACK_MODEL }),
-        })
-
-        if (!retryRes.ok) {
-          const retryText = await retryRes.text()
+        response = await callClaude(OCR_FALLBACK_MODEL)
+        if (!response.ok) {
           return NextResponse.json(
-            { error: retryText || 'Claude request failed', model: OCR_FALLBACK_MODEL, fallbackUsed: true },
+            { error: response.error || 'Claude request failed', model: OCR_FALLBACK_MODEL, fallbackUsed: true },
             { status: 502 },
           )
         }
-
-        const retryBody = await retryRes.json()
-        const retryText = Array.isArray(retryBody?.content)
-          ? retryBody.content.map((c: any) => c?.text || '').join('\n')
-          : ''
-
-        const cleanedRetry = cleanJsonText(retryText)
-        let parsedRetry: any
-        try {
-          parsedRetry = JSON.parse(cleanedRetry)
-        } catch (err) {
-          return NextResponse.json({ error: 'Failed to parse OCR result', raw: retryText }, { status: 500 })
-        }
-
-        const itemsRawRetry = Array.isArray(parsedRetry?.items) ? parsedRetry.items : []
-        const normalizedRetry = itemsRawRetry.map(normalizeItem).filter((item) => item.trackingId)
-
-        const uniqueMapRetry = new Map<string, typeof normalizedRetry[number]>()
-        const duplicateInUploadRetry = new Set<string>()
-        normalizedRetry.forEach((item) => {
-          const id = item.trackingId
-          if (uniqueMapRetry.has(id)) {
-            duplicateInUploadRetry.add(id)
-          } else {
-            uniqueMapRetry.set(id, item)
-          }
-        })
-
-        const uniqueItemsRetry = Array.from(uniqueMapRetry.values())
-        const idsRetry = uniqueItemsRetry.map((i) => i.trackingId)
-
-        const supabaseRetry = createSupabaseService()
-        const { data: existingRetry } = await supabaseRetry.from('products').select('id').in('id', idsRetry)
-        const existingIdsRetry = new Set((existingRetry || []).map((row: any) => String(row.id)))
-
-        const withFlagsRetry = uniqueItemsRetry.map((item) => ({
-          ...item,
-          exists: existingIdsRetry.has(item.trackingId),
-          duplicateInUpload: duplicateInUploadRetry.has(item.trackingId),
-        }))
-
-        return NextResponse.json({ items: withFlagsRetry, modelUsed: OCR_FALLBACK_MODEL })
-      }
-
-      return NextResponse.json(
-        { error: errText || 'Claude request failed', model: OCR_MODEL },
-        { status: 502 },
-      )
-    }
-
-    const claudeBody = await claudeRes.json()
-    const text = Array.isArray(claudeBody?.content)
-      ? claudeBody.content.map((c: any) => c?.text || '').join('\n')
-      : ''
-
-    const cleaned = cleanJsonText(text)
-    let parsed: any
-    try {
-      parsed = JSON.parse(cleaned)
-    } catch (err) {
-      return NextResponse.json({ error: 'Failed to parse OCR result', raw: text }, { status: 500 })
-    }
-
-    const itemsRaw = Array.isArray(parsed?.items) ? parsed.items : []
-    const normalized = itemsRaw.map(normalizeItem).filter((item) => item.trackingId)
-
-    const uniqueMap = new Map<string, typeof normalized[number]>()
-    const duplicateInUpload = new Set<string>()
-    normalized.forEach((item) => {
-      const id = item.trackingId
-      if (uniqueMap.has(id)) {
-        duplicateInUpload.add(id)
       } else {
-        uniqueMap.set(id, item)
+        return NextResponse.json({ error: response.error || 'Claude request failed', model: OCR_MODEL }, { status: 502 })
       }
-    })
+    }
 
-    const uniqueItems = Array.from(uniqueMap.values())
-    const ids = uniqueItems.map((i) => i.trackingId)
+    const extracted = extractItemsFromText(response.text || '')
+    if (extracted.error) {
+      return NextResponse.json({ error: extracted.error, raw: response.text }, { status: 500 })
+    }
 
+    const ids = extracted.items.map((i) => i.trackingId)
     const supabase = createSupabaseService()
     const { data: existing } = await supabase.from('products').select('id').in('id', ids)
     const existingIds = new Set((existing || []).map((row: any) => String(row.id)))
 
-    const withFlags = uniqueItems.map((item) => ({
+    const withFlags = extracted.items.map((item) => ({
       ...item,
       exists: existingIds.has(item.trackingId),
-      duplicateInUpload: duplicateInUpload.has(item.trackingId),
+      duplicateInUpload: extracted.duplicateInUpload.has(item.trackingId),
     }))
 
     return NextResponse.json({ items: withFlags })

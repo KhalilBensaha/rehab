@@ -111,7 +111,7 @@ export default function WorkersPage() {
 
       const updated = products.map((p) =>
         p.id === productId
-          ? { ...p, workerId: String(selectedWorkerForProducts.id), status: "delivery" }
+          ? { ...p, workerId: String(selectedWorkerForProducts.id), status: normalizeStatus("delivery") }
           : p,
       )
       setStoreProducts(updated)

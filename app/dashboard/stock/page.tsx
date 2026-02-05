@@ -139,6 +139,7 @@ function StockContent() {
     try {
       const formData = new FormData()
       formData.append("file", bulkFile)
+      formData.append("companyId", bulkCompanyId)
       const res = await fetch("/api/products/ocr", {
         method: "POST",
         body: formData,
