@@ -9,6 +9,30 @@ import { createSupabaseService } from '@/lib/supabaseService'
 const OCR_MODEL = process.env.CLAUDE_OCR_MODEL || 'claude-3-5-sonnet-latest'
 const OCR_FALLBACK_MODEL = process.env.CLAUDE_OCR_FALLBACK_MODEL || 'claude-3-haiku-20240307'
 
+const OCR_TOOL = {
+  name: 'extract_products',
+  description: 'Extract product rows from a shipping list',
+  input_schema: {
+    type: 'object',
+    properties: {
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            trackingId: { type: 'string' },
+            clientName: { type: 'string' },
+            phone: { type: 'string' },
+            price: { type: 'number' },
+          },
+          required: ['trackingId', 'clientName', 'phone', 'price'],
+        },
+      },
+    },
+    required: ['items'],
+  },
+}
+
 function parsePrice(raw: unknown): number {
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw
   if (typeof raw !== 'string') return 0
@@ -130,6 +154,24 @@ function extractItemsFromText(text: string) {
   return { items: Array.from(uniqueMap.values()), duplicateInUpload }
 }
 
+function extractItemsFromParsed(parsed: any) {
+  const itemsRaw = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : []
+  const normalized = itemsRaw.map(normalizeItem).filter((item) => item.trackingId)
+
+  const uniqueMap = new Map<string, (typeof normalized)[number]>()
+  const duplicateInUpload = new Set<string>()
+  normalized.forEach((item) => {
+    const id = item.trackingId
+    if (uniqueMap.has(id)) {
+      duplicateInUpload.add(id)
+    } else {
+      uniqueMap.set(id, item)
+    }
+  })
+
+  return { items: Array.from(uniqueMap.values()), duplicateInUpload }
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData()
@@ -169,6 +211,8 @@ export async function POST(req: Request) {
       model: OCR_MODEL,
       max_tokens: 1200,
       temperature: 0,
+      tools: [OCR_TOOL],
+      tool_choice: { type: 'tool', name: 'extract_products' },
       messages: [{ role: 'user', content }],
     }
 
@@ -188,8 +232,10 @@ export async function POST(req: Request) {
       }
 
       const body = await res.json()
-      const text = Array.isArray(body?.content) ? body.content.map((c: any) => c?.text || '').join('\n') : ''
-      return { ok: true, text }
+      const contentArr = Array.isArray(body?.content) ? body.content : []
+      const toolUse = contentArr.find((c: any) => c?.type === 'tool_use' && c?.name === 'extract_products')
+      const text = contentArr.map((c: any) => c?.text || '').join('\n')
+      return { ok: true, text, toolInput: toolUse?.input }
     }
 
     let response = await callClaude(OCR_MODEL)
@@ -208,7 +254,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const extracted = extractItemsFromText(response.text || '')
+    const extracted = response.toolInput ? extractItemsFromParsed(response.toolInput) : extractItemsFromText(response.text || '')
     if (extracted.error) {
       return NextResponse.json({ error: extracted.error, raw: response.text }, { status: 500 })
     }
