@@ -231,6 +231,10 @@ export const translations = {
     treasure: {
       title: "Treasure",
       subtitle: "Delivered products, revenue, and benefit summary.",
+      print: "Print PDF",
+      printTitle: "Treasure Report",
+      printFilter: "Company",
+      printCount: "Products",
       cards: {
         delivered: "Total Delivered",
         revenue: "Total Revenue",
@@ -240,16 +244,6 @@ export const translations = {
         final: "Final Benefit",
         finalHint: "Revenue",
       },
-        printAll: "Imprimer tout",
-        printSelected: "Imprimer la sélection",
-        selectAll: "Tout sélectionner",
-        printNoSelection: "Aucune sélection",
-        printNoSelectionDesc: "Sélectionnez des lignes à imprimer.",
-        printTitle: "Feuille du livreur",
-        workerName: "Livreur",
-        workerPhone: "Téléphone",
-        workerCommission: "Commission",
-        printCount: "Produits",
       tableTitle: "Delivered Products",
       filterAll: "All Companies",
       table: {
@@ -506,6 +500,10 @@ export const translations = {
     treasure: {
       title: "Trésorerie",
       subtitle: "Produits livrés, revenus et bénéfices.",
+      print: "Imprimer PDF",
+      printTitle: "Rapport Trésorerie",
+      printFilter: "Entreprise",
+      printCount: "Produits",
       cards: {
         delivered: "Total livrés",
         revenue: "Revenu total",
@@ -761,6 +759,10 @@ export const translations = {
     treasure: {
       title: "الخزينة",
       subtitle: "المنتجات المسلمة والإيرادات والفائدة.",
+      print: "طباعة PDF",
+      printTitle: "تقرير الخزينة",
+      printFilter: "الشركة",
+      printCount: "الطرود",
       cards: {
         delivered: "إجمالي المسلّم",
         revenue: "إجمالي الإيراد",
