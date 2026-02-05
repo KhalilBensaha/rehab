@@ -207,16 +207,18 @@ export async function POST(req: Request) {
           },
     ]
 
-    const requestBody = {
-      model: OCR_MODEL,
-      max_tokens: 1200,
-      temperature: 0,
-      tools: [OCR_TOOL],
-      tool_choice: { type: 'tool', name: 'extract_products' },
-      messages: [{ role: 'user', content }],
-    }
+    const callClaude = async (model: string, useTools: boolean) => {
+      const body: any = {
+        model,
+        max_tokens: 4096,
+        temperature: 0,
+        messages: [{ role: 'user', content }],
+      }
+      if (useTools) {
+        body.tools = [OCR_TOOL]
+        body.tool_choice = { type: 'tool', name: 'extract_products' }
+      }
 
-    const callClaude = async (model: string) => {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -224,25 +226,29 @@ export async function POST(req: Request) {
           'x-api-key': process.env.ANTHROPIC_API_KEY || '',
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify({ ...requestBody, model }),
+        body: JSON.stringify(body),
       })
 
       if (!res.ok) {
-        return { ok: false, error: await res.text() }
+        return { ok: false as const, error: await res.text() }
       }
 
-      const body = await res.json()
-      const contentArr = Array.isArray(body?.content) ? body.content : []
+      const json = await res.json()
+      console.log('[OCR] Claude response stop_reason:', json?.stop_reason, 'content types:', json?.content?.map((c: any) => c?.type))
+
+      const contentArr = Array.isArray(json?.content) ? json.content : []
       const toolUse = contentArr.find((c: any) => c?.type === 'tool_use' && c?.name === 'extract_products')
       const text = contentArr.map((c: any) => c?.text || '').join('\n')
-      return { ok: true, text, toolInput: toolUse?.input }
+      return { ok: true as const, text, toolInput: toolUse?.input }
     }
 
-    let response = await callClaude(OCR_MODEL)
+    // Try with tools first
+    let response = await callClaude(OCR_MODEL, true)
     if (!response.ok) {
       const isModelNotFound = response.error?.includes('not_found_error') || response.error?.toLowerCase().includes('model')
       if (isModelNotFound && OCR_FALLBACK_MODEL) {
-        response = await callClaude(OCR_FALLBACK_MODEL)
+        // Fallback model may not support tools, try without
+        response = await callClaude(OCR_FALLBACK_MODEL, false)
         if (!response.ok) {
           return NextResponse.json(
             { error: response.error || 'Claude request failed', model: OCR_FALLBACK_MODEL, fallbackUsed: true },
@@ -250,11 +256,27 @@ export async function POST(req: Request) {
           )
         }
       } else {
-        return NextResponse.json({ error: response.error || 'Claude request failed', model: OCR_MODEL }, { status: 502 })
+        // If tool-use itself failed (not model issue), retry without tools
+        console.log('[OCR] Tool-use request failed, retrying without tools:', response.error)
+        response = await callClaude(OCR_MODEL, false)
+        if (!response.ok) {
+          return NextResponse.json({ error: response.error || 'Claude request failed', model: OCR_MODEL }, { status: 502 })
+        }
       }
     }
 
+    // If tool_use succeeded but returned no input, fall back to text-only
+    if (response.ok && !response.toolInput && !response.text?.trim()) {
+      console.log('[OCR] No tool output and no text, retrying without tools')
+      response = await callClaude(OCR_MODEL, false)
+      if (!response.ok) {
+        return NextResponse.json({ error: response.error || 'Claude request failed' }, { status: 502 })
+      }
+    }
+
+    console.log('[OCR] toolInput?', !!response.toolInput, 'text length:', response.text?.length || 0)
     const extracted = response.toolInput ? extractItemsFromParsed(response.toolInput) : extractItemsFromText(response.text || '')
+    console.log('[OCR] extracted items:', extracted.items?.length || 0)
     if (extracted.error) {
       return NextResponse.json({ error: extracted.error, raw: response.text }, { status: 500 })
     }
