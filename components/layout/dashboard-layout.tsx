@@ -12,6 +12,7 @@ import { cn, isSuperRole } from "@/lib/utils"
 import { translations } from "@/lib/i18n"
 import { LanguageSwitcher } from "@/components/language-switcher"
 import Image from "next/image"
+import { useIsMobile } from "@/components/ui/use-mobile"
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { currentUser, setCurrentUser, locale } = useStore()
@@ -20,6 +21,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isCheckingSession, setIsCheckingSession] = useState(true)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     setMounted(true)
@@ -69,6 +71,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser, pathname, router, setCurrentUser])
 
+  useEffect(() => {
+    if (!mounted) return
+    setSidebarOpen(!isMobile)
+  }, [isMobile, mounted])
+
   if (!mounted || isCheckingSession) return null
   if (!currentUser) return null
 
@@ -94,11 +101,29 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className={cn("flex min-h-screen bg-background text-foreground")}> 
       {/* Sidebar */}
+      {isMobile && sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       <aside
         dir={dir}
         className={cn(
-          "bg-card flex flex-col transition-all duration-300 overflow-hidden",
-          sidebarOpen ? "w-64" : "w-0",
+          "bg-card flex flex-col overflow-hidden",
+          isMobile
+            ? "fixed inset-y-0 z-40 w-64 transition-transform duration-300"
+            : "transition-all duration-300",
+          isMobile
+            ? sidebarOpen
+              ? "translate-x-0"
+              : dir === "rtl"
+                ? "translate-x-full"
+                : "-translate-x-full"
+            : sidebarOpen
+              ? "w-64"
+              : "w-0",
           dir === "rtl" ? "border-l border-r-0" : "border-r",
           dir === "rtl" && "items-end text-right",
         )}
@@ -170,9 +195,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        <header className="h-16 border-b flex items-center justify-between px-8 sticky top-0 bg-background/80 backdrop-blur z-10">
+        <header className="h-14 sm:h-16 border-b flex items-center justify-between px-4 sm:px-8 sticky top-0 bg-background/80 backdrop-blur z-10">
           <div
-            className={cn("flex items-center gap-2 text-sm text-muted-foreground", dir === "rtl" && "flex-row-reverse")}
+            className={cn(
+              "flex items-center gap-2 text-sm text-muted-foreground min-w-0",
+              dir === "rtl" && "flex-row-reverse",
+            )}
           >
             <Button
               variant="ghost"
@@ -183,9 +211,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-4 w-4" />
             </Button>
-            <span>{t.nav.dashboard}</span>
-            <ChevronRight className={cn("h-3 w-3", dir === "rtl" && "rotate-180")} />
-            <span className="text-foreground font-medium capitalize">
+            <span className="hidden sm:inline">{t.nav.dashboard}</span>
+            <ChevronRight className={cn("h-3 w-3 hidden sm:inline", dir === "rtl" && "rotate-180")} />
+            <span className="text-foreground font-medium capitalize truncate">
               {t.nav[pathname.split("/").pop() as keyof typeof t.nav] || t.nav.overview}
             </span>
           </div>
@@ -193,7 +221,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <LanguageSwitcher />
           </div>
         </header>
-        <div className="p-8">{children}</div>
+        <div className="p-4 sm:p-8">{children}</div>
       </main>
     </div>
   )

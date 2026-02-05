@@ -480,8 +480,8 @@ function StockContent() {
                   </DialogHeader>
                   <div className="flex flex-col flex-1 gap-4 pt-2 min-h-0">
                     {/* Controls row */}
-                    <div className="flex flex-wrap items-end gap-4">
-                      <div className="grid gap-1.5 min-w-[200px]">
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
+                      <div className="grid gap-1.5 w-full sm:min-w-[200px] sm:w-auto">
                         <Label>{t.stock.company}</Label>
                         <Select value={bulkCompanyId} onValueChange={setBulkCompanyId}>
                           <SelectTrigger>
@@ -496,7 +496,7 @@ function StockContent() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="grid gap-1.5 min-w-[250px] flex-1">
+                      <div className="grid gap-1.5 w-full sm:min-w-[250px] flex-1">
                         <Label htmlFor="bulkFile">{t.stock.importFile}</Label>
                         <Input
                         id="bulkFile"
@@ -528,7 +528,7 @@ function StockContent() {
                         </div>
                       )}
                       </div>
-                      <div className="flex gap-2 items-end">
+                      <div className="flex flex-wrap gap-2 items-end w-full sm:w-auto">
                         <Button
                           type="button"
                           disabled={!bulkCompanyId || bulkFiles.length === 0 || bulkLoading}
@@ -543,7 +543,7 @@ function StockContent() {
                         </Button>
                       </div>
                       {bulkFiles.length > 0 && !bulkLoading && (
-                        <span className="text-xs text-muted-foreground self-end pb-2">
+                        <span className="text-xs text-muted-foreground sm:self-end pb-2">
                           {bulkFiles.length} file{bulkFiles.length > 1 ? "s" : ""} selected
                         </span>
                       )}
