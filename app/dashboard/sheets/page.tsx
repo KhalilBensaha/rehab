@@ -267,7 +267,7 @@ function SheetsContent() {
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <UserCircle className="h-5 w-5 text-primary" /> {t("sheets.team")}
             </h2>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-2">
               {workers.map((worker) => (
                 <Card
                   key={worker.id}
