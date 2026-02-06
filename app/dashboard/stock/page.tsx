@@ -37,9 +37,10 @@ function StockContent() {
   const [companies, setCompanies] = useState<any[]>([])
 
   const [bulkCompanyId, setBulkCompanyId] = useState("")
-  const [bulkFile, setBulkFile] = useState<File | null>(null)
+  const [bulkFiles, setBulkFiles] = useState<File[]>([])
   const [bulkItems, setBulkItems] = useState<BulkItem[]>([])
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 })
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkError, setBulkError] = useState<string>("")
 
@@ -125,39 +126,61 @@ function StockContent() {
 
   const resetBulk = () => {
     setBulkCompanyId("")
-    setBulkFile(null)
+    setBulkFiles([])
     setBulkItems([])
     setBulkLoading(false)
+    setBulkProgress({ current: 0, total: 0 })
     setBulkSubmitting(false)
     setBulkError("")
   }
 
   const handleBulkExtract = async () => {
-    if (!bulkCompanyId || !bulkFile) return
+    if (!bulkCompanyId || bulkFiles.length === 0) return
     setBulkLoading(true)
     setBulkError("")
-    try {
-      const formData = new FormData()
-      formData.append("file", bulkFile)
-      const res = await fetch("/api/products/ocr", {
-        method: "POST",
-        body: formData,
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setBulkError(err?.error || "OCR failed")
-        setBulkItems([])
-        return
+    setBulkItems([])
+    setBulkProgress({ current: 0, total: bulkFiles.length })
+
+    const allItems: BulkItem[] = []
+    const errors: string[] = []
+
+    for (let i = 0; i < bulkFiles.length; i++) {
+      setBulkProgress({ current: i + 1, total: bulkFiles.length })
+      try {
+        const formData = new FormData()
+        formData.append("file", bulkFiles[i])
+        formData.append("companyId", bulkCompanyId)
+        const res = await fetch("/api/products/ocr", {
+          method: "POST",
+          body: formData,
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          errors.push(`${bulkFiles[i].name}: ${err?.error || "OCR failed"}`)
+          continue
+        }
+        const body = await res.json()
+        const items = Array.isArray(body?.items) ? body.items : []
+        allItems.push(...items)
+      } catch (err) {
+        console.error(`OCR failed for ${bulkFiles[i].name}`, err)
+        errors.push(`${bulkFiles[i].name}: OCR failed`)
       }
-      const body = await res.json()
-      setBulkItems(Array.isArray(body?.items) ? body.items : [])
-    } catch (err) {
-      console.error("OCR failed", err)
-      setBulkError("OCR failed")
-      setBulkItems([])
-    } finally {
-      setBulkLoading(false)
     }
+
+    // Deduplicate across all files
+    const uniqueMap = new Map<string, BulkItem>()
+    allItems.forEach((item) => {
+      if (item.trackingId && !uniqueMap.has(item.trackingId)) {
+        uniqueMap.set(item.trackingId, item)
+      }
+    })
+    setBulkItems(Array.from(uniqueMap.values()))
+
+    if (errors.length > 0) {
+      setBulkError(errors.join(" | "))
+    }
+    setBulkLoading(false)
   }
 
   const handleBulkSubmit = async () => {
@@ -451,62 +474,94 @@ function StockContent() {
                     <Upload className="h-4 w-4" /> {t.stock.import}
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="w-screen h-screen max-w-none sm:rounded-none p-4 overflow-auto">
+                <DialogContent className="w-screen h-screen max-w-none sm:rounded-none p-6 flex flex-col overflow-hidden">
                   <DialogHeader>
                     <DialogTitle>{t.stock.importTitle}</DialogTitle>
                   </DialogHeader>
-                  <div className="space-y-4 pt-4 min-h-full">
-                    <div className="grid gap-2">
-                      <Label>{t.stock.company}</Label>
-                      <Select value={bulkCompanyId} onValueChange={setBulkCompanyId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t.stock.company} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {companies.map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="bulkFile">{t.stock.importFile}</Label>
-                      <Input
+                  <div className="flex flex-col flex-1 gap-4 pt-2 min-h-0">
+                    {/* Controls row */}
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-4">
+                      <div className="grid gap-1.5 w-full sm:min-w-[200px] sm:w-auto">
+                        <Label>{t.stock.company}</Label>
+                        <Select value={bulkCompanyId} onValueChange={setBulkCompanyId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t.stock.company} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {companies.map((c) => (
+                              <SelectItem key={c.id} value={String(c.id)}>
+                                {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-1.5 w-full sm:min-w-[250px] flex-1">
+                        <Label htmlFor="bulkFile">{t.stock.importFile}</Label>
+                        <Input
                         id="bulkFile"
                         type="file"
                         accept="application/pdf,image/*"
-                        onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+                        multiple
+                        onChange={(e) => {
+                          const files = e.target.files
+                          if (files && files.length > 0) {
+                            setBulkFiles((prev) => [...prev, ...Array.from(files)])
+                          }
+                          e.target.value = ""
+                        }}
                       />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        disabled={!bulkCompanyId || !bulkFile || bulkLoading}
-                        onClick={handleBulkExtract}
-                      >
-                        {bulkLoading ? t.stock.importExtracting : t.stock.importExtract}
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={resetBulk}>
-                        {t.common.cancel}
-                      </Button>
+                      {bulkFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {bulkFiles.map((file, i) => (
+                            <Badge key={`${file.name}-${i}`} variant="secondary" className="gap-1 pr-1">
+                              <span className="max-w-[150px] truncate text-xs">{file.name}</span>
+                              <button
+                                type="button"
+                                className="ml-1 rounded-full hover:bg-muted p-0.5"
+                                onClick={() => setBulkFiles((prev) => prev.filter((_, j) => j !== i))}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      </div>
+                      <div className="flex flex-wrap gap-2 items-end w-full sm:w-auto">
+                        <Button
+                          type="button"
+                          disabled={!bulkCompanyId || bulkFiles.length === 0 || bulkLoading}
+                          onClick={handleBulkExtract}
+                        >
+                          {bulkLoading
+                            ? `${t.stock.importExtracting} (${bulkProgress.current}/${bulkProgress.total})`
+                            : t.stock.importExtract}
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={resetBulk}>
+                          {t.common.cancel}
+                        </Button>
+                      </div>
+                      {bulkFiles.length > 0 && !bulkLoading && (
+                        <span className="text-xs text-muted-foreground sm:self-end pb-2">
+                          {bulkFiles.length} file{bulkFiles.length > 1 ? "s" : ""} selected
+                        </span>
+                      )}
                     </div>
                     {bulkError && <div className="text-sm text-destructive">{bulkError}</div>}
                     {bulkItems.length > 0 ? (
-                      <div className="space-y-3">
-                        <div className="text-sm text-muted-foreground">{t.stock.importPreview}</div>
-                        <div className="overflow-auto rounded-md border">
-                          <div className="min-w-[1200px]">
-                            <Table className="table-fixed">
-                            <TableHeader>
+                      <div className="flex flex-col flex-1 min-h-0 gap-2">
+                        <div className="text-sm text-muted-foreground">{t.stock.importPreview} ({bulkItems.length})</div>
+                        <div className="flex-1 overflow-auto rounded-md border">
+                            <Table>
+                            <TableHeader className="sticky top-0 bg-background z-10">
                               <TableRow>
-                                <TableHead className="w-[180px]">{t.stock.table.id}</TableHead>
-                                <TableHead className="w-[220px]">{t.stock.table.client}</TableHead>
-                                <TableHead className="w-[200px]">{t.stock.phone}</TableHead>
-                                <TableHead className="w-[140px]">{t.stock.table.price}</TableHead>
-                                <TableHead className="w-[160px]">{t.stock.importStatus}</TableHead>
-                                <TableHead className="w-[90px] text-right">{t.common.actions}</TableHead>
+                                <TableHead className="min-w-[160px]">{t.stock.table.id}</TableHead>
+                                <TableHead className="min-w-[180px]">{t.stock.table.client}</TableHead>
+                                <TableHead className="min-w-[160px]">{t.stock.phone}</TableHead>
+                                <TableHead className="min-w-[120px]">{t.stock.table.price}</TableHead>
+                                <TableHead className="min-w-[120px]">{t.stock.importStatus}</TableHead>
+                                <TableHead className="w-[60px] text-right">{t.common.actions}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -586,9 +641,8 @@ function StockContent() {
                               ))}
                             </TableBody>
                             </Table>
-                          </div>
                         </div>
-                        <div className="sticky bottom-0 bg-background/95 backdrop-blur px-2 py-3 -mx-2 border-t">
+                        <div className="shrink-0 pt-3 border-t">
                           <Button
                             type="button"
                             onClick={handleBulkSubmit}

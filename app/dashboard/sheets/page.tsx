@@ -12,20 +12,23 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Search, UserCircle, ExternalLink, ArrowRightLeft } from "lucide-react"
 import { useTranslations } from "@/lib/i18n"
 import { toast } from "@/hooks/use-toast"
 
 function SheetsContent() {
-  const { t } = useTranslations()
+  const { t, locale, dir } = useTranslations()
   const { workers, products, assignProduct, detachProduct, setWorkers, setProducts, updateProductStatus } = useStore()
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null)
   const [isAssignOpen, setIsAssignOpen] = useState(false)
   const [productToAssign, setProductToAssign] = useState<string>("")
   const [productIdInput, setProductIdInput] = useState<string>("")
   const [assigning, setAssigning] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const workerProducts = selectedWorker ? products.filter((p) => p.workerId === selectedWorker.id) : []
+  const allSelected = workerProducts.length > 0 && selectedIds.size === workerProducts.length
 
   const normalizeStatus = (status: string) => (status === "in stock" ? "in_stock" : status)
   const statusLabel = (status: string) => {
@@ -87,6 +90,10 @@ function SheetsContent() {
     load()
   }, [setProducts, setWorkers])
 
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [selectedWorker?.id])
+
   const handleAssign = async (explicitId?: string) => {
     const productId = (explicitId || productToAssign).trim()
     if (!selectedWorker || !productId) return
@@ -143,6 +150,109 @@ function SheetsContent() {
     })
   }
 
+  const toggleSelectAll = (checked: boolean) => {
+    if (!checked) {
+      setSelectedIds(new Set())
+      return
+    }
+    const next = new Set(workerProducts.map((p) => p.id))
+    setSelectedIds(next)
+  }
+
+  const toggleRow = (productId: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) {
+        next.add(productId)
+      } else {
+        next.delete(productId)
+      }
+      return next
+    })
+  }
+
+  const handlePrint = (mode: "selected" | "all") => {
+    if (!selectedWorker) return
+    const items = mode === "all" ? workerProducts : workerProducts.filter((p) => selectedIds.has(p.id))
+    if (items.length === 0) {
+      toast({
+        variant: "destructive",
+        title: t("sheets.printNoSelection"),
+        description: t("sheets.printNoSelectionDesc"),
+      })
+      return
+    }
+
+    const dateText = new Date().toLocaleString(locale || "en")
+    const html = `<!doctype html>
+<html dir="${dir}">
+  <head>
+    <meta charset="utf-8" />
+    <title>${t("sheets.printTitle")}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
+      h1 { font-size: 18px; margin: 0 0 4px 0; }
+      .muted { color: #666; font-size: 12px; }
+      .info { margin: 12px 0 16px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 12px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; text-align: ${dir === "rtl" ? "right" : "left"}; }
+      th { background: #f5f5f5; }
+      .right { text-align: ${dir === "rtl" ? "left" : "right"}; }
+      @media print { body { padding: 0; } }
+    </style>
+  </head>
+  <body>
+    <h1>${t("sheets.printTitle")}</h1>
+    <div class="muted">${dateText}</div>
+    <div class="info">
+      <div><strong>${t("sheets.workerName")}:</strong> ${selectedWorker.name}</div>
+      <div><strong>${t("sheets.workerPhone")}:</strong> ${selectedWorker.phone || "-"}</div>
+      <div><strong>${t("sheets.workerCommission")}:</strong> ${selectedWorker.commission.toFixed(2)} ${t("common.currency")}</div>
+      <div><strong>${t("sheets.printCount")}:</strong> ${items.length}</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>${t("sheets.table.id")}</th>
+          <th>${t("sheets.table.client")}</th>
+          <th>${t("sheets.table.company")}</th>
+          <th>${t("stock.phone")}</th>
+          <th>${t("sheets.table.price")}</th>
+          <th>${t("sheets.table.status")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items
+          .map(
+            (p) => `
+          <tr>
+            <td>${p.id}</td>
+            <td>${p.clientName}</td>
+            <td>${p.companyName}</td>
+            <td>${p.phone || "-"}</td>
+            <td class="right">${Number(p.price || 0).toFixed(2)}</td>
+            <td>${statusLabel(p.status)}</td>
+          </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>
+  </body>
+</html>`
+
+    const printWindow = window.open("", "_blank", "width=1024,height=768")
+    if (!printWindow) return
+    printWindow.document.open()
+    printWindow.document.write(html)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => {
+      printWindow.print()
+      printWindow.close()
+    }, 300)
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -157,7 +267,7 @@ function SheetsContent() {
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <UserCircle className="h-5 w-5 text-primary" /> {t("sheets.team")}
             </h2>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-2">
               {workers.map((worker) => (
                 <Card
                   key={worker.id}
@@ -185,21 +295,44 @@ function SheetsContent() {
           <div className="lg:col-span-2">
             {selectedWorker ? (
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
                     <CardTitle className="text-xl">{t("sheets.sheetTitle", { name: selectedWorker.name })}</CardTitle>
                     <p className="text-sm text-muted-foreground">
                       {t("sheets.commission", { value: selectedWorker.commission.toFixed(2) })}
                     </p>
                   </div>
-                  <Button onClick={() => setIsAssignOpen(true)} className="gap-2">
-                    <ArrowRightLeft className="h-4 w-4" /> {t("sheets.affect")}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={workerProducts.length === 0}
+                      onClick={() => handlePrint("all")}
+                    >
+                      {t("sheets.printAll")}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={selectedIds.size === 0}
+                      onClick={() => handlePrint("selected")}
+                    >
+                      {t("sheets.printSelected")}
+                    </Button>
+                    <Button onClick={() => setIsAssignOpen(true)} className="gap-2">
+                      <ArrowRightLeft className="h-4 w-4" /> {t("sheets.affect")}
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-[40px]">
+                          <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={(checked) => toggleSelectAll(Boolean(checked))}
+                            aria-label={t("sheets.selectAll")}
+                          />
+                        </TableHead>
                         <TableHead>{t("sheets.table.id")}</TableHead>
                         <TableHead>{t("sheets.table.client")}</TableHead>
                         <TableHead>{t("sheets.table.company")}</TableHead>
@@ -211,6 +344,13 @@ function SheetsContent() {
                     <TableBody>
                       {workerProducts.map((p) => (
                         <TableRow key={p.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedIds.has(p.id)}
+                              onCheckedChange={(checked) => toggleRow(p.id, Boolean(checked))}
+                              aria-label={p.id}
+                            />
+                          </TableCell>
                           <TableCell className="font-mono text-xs">{p.id}</TableCell>
                           <TableCell>{p.clientName}</TableCell>
                           <TableCell>{p.companyName}</TableCell>
@@ -249,7 +389,7 @@ function SheetsContent() {
                       ))}
                       {workerProducts.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                          <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                             {t("sheets.noAssignments")}
                           </TableCell>
                         </TableRow>
