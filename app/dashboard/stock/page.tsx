@@ -412,6 +412,116 @@ function StockContent() {
     return matchesCompany && matchesSearch && matchesDuplicate
   })
 
+  const buildCompanyName = (companyId: any) =>
+    companies.find((c) => String(c.id) === String(companyId))?.name || "-"
+
+  const handleExportCsv = () => {
+    if (filteredProducts.length === 0) return
+    const headers = [
+      t.stock.table.id,
+      t.stock.table.client,
+      t.stock.table.company,
+      t.stock.phone,
+      t.stock.table.price,
+      t.stock.table.status,
+      t.stock.detailCreatedAt || "Added on",
+      t.stock.detailWorker || "Worker",
+    ]
+    const rows = filteredProducts.map((p) => [
+      String(p.id),
+      p.client_name || "",
+      buildCompanyName(p.company_id),
+      p.phone || "",
+      Number(p.price || 0).toFixed(2),
+      STATUS_LABELS[normalizeStatus(p.status)],
+      formatDateTime(p.created_at),
+      p.delivery_worker_id
+        ? workers.find((w) => String(w.id) === String(p.delivery_worker_id))?.name || String(p.delivery_worker_id)
+        : "",
+    ])
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n")
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "stock-export.csv"
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportPdf = () => {
+    if (filteredProducts.length === 0) return
+    const dateText = new Date().toLocaleString(locale || "en")
+    const html = `<!doctype html>
+<html dir="${t.dir}">
+  <head>
+    <meta charset="utf-8" />
+    <title>${t.stock.exportTitle || "Stock Export"}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
+      h1 { font-size: 18px; margin: 0 0 4px 0; }
+      .muted { color: #666; font-size: 12px; }
+      .info { margin: 12px 0 16px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 12px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; text-align: ${t.dir === "rtl" ? "right" : "left"}; }
+      th { background: #f5f5f5; }
+      .right { text-align: ${t.dir === "rtl" ? "left" : "right"}; }
+      @media print { body { padding: 0; } }
+    </style>
+  </head>
+  <body>
+    <h1>${t.stock.exportTitle || "Stock Export"}</h1>
+    <div class="muted">${dateText}</div>
+    <div class="info">
+      <div><strong>${t.stock.table.company}:</strong> ${filterCompany === "all" ? t.stock.filterAll : buildCompanyName(filterCompany)}</div>
+      <div><strong>${t.stock.exportCount || "Products"}:</strong> ${filteredProducts.length}</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>${t.stock.table.id}</th>
+          <th>${t.stock.table.client}</th>
+          <th>${t.stock.table.company}</th>
+          <th>${t.stock.phone}</th>
+          <th class="right">${t.stock.table.price}</th>
+          <th>${t.stock.table.status}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filteredProducts
+          .map(
+            (p) => `
+          <tr>
+            <td>${p.id}</td>
+            <td>${p.client_name || ""}</td>
+            <td>${buildCompanyName(p.company_id)}</td>
+            <td>${p.phone || "-"}</td>
+            <td class="right">${Number(p.price || 0).toFixed(2)} ${t.common.currency}</td>
+            <td>${STATUS_LABELS[normalizeStatus(p.status)]}</td>
+          </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>
+  </body>
+</html>`
+
+    const printWindow = window.open("", "_blank", "width=1024,height=768")
+    if (!printWindow) return
+    printWindow.document.open()
+    printWindow.document.write(html)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => {
+      printWindow.print()
+      printWindow.close()
+    }, 300)
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -737,6 +847,12 @@ function StockContent() {
               onClick={() => setShowDuplicates((prev) => !prev)}
             >
               {t.stock.filterDuplicates || "Filter duplicates"}
+            </Button>
+            <Button type="button" variant="outline" onClick={handleExportCsv}>
+              {t.stock.exportCsv || "Export CSV"}
+            </Button>
+            <Button type="button" variant="outline" onClick={handleExportPdf}>
+              {t.stock.exportPdf || "Export PDF"}
             </Button>
           </div>
         </div>
