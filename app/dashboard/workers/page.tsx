@@ -228,7 +228,7 @@ export default function WorkersPage() {
       toast({
         variant: "destructive",
         title: t("workers.toastUploadFailedTitle"),
-        description: err?.message || err?.error || t("workers.toastUploadFailedDesc"),
+        description: t("workers.toastUploadFailedDesc"),
       })
     }
   }
@@ -277,7 +277,7 @@ export default function WorkersPage() {
       toast({
         variant: "destructive",
         title: t("workers.toastUpdateFailedTitle"),
-        description: err?.message || err?.error || t("workers.toastUpdateFailedDesc"),
+        description: t("workers.toastUpdateFailedDesc"),
       })
     }
   }

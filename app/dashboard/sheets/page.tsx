@@ -208,7 +208,6 @@ function SheetsContent() {
     <div class="info">
       <div><strong>${t("sheets.workerName")}:</strong> ${selectedWorker.name}</div>
       <div><strong>${t("sheets.workerPhone")}:</strong> ${selectedWorker.phone || "-"}</div>
-      <div><strong>${t("sheets.workerCommission")}:</strong> ${selectedWorker.commission.toFixed(2)} ${t("common.currency")}</div>
       <div><strong>${t("sheets.printCount")}:</strong> ${items.length}</div>
     </div>
     <table>

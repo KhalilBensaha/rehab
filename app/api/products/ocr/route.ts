@@ -134,15 +134,19 @@ function extractItemsFromText(text: string) {
   const cleaned = cleanJsonText(text)
   const parsed = tryParseJson(cleaned)
   if (!parsed) {
-    return { error: 'Failed to parse OCR result', items: [] as ReturnType<typeof normalizeItem>[] }
+    return {
+      error: 'Failed to parse OCR result',
+      items: [] as ReturnType<typeof normalizeItem>[],
+      duplicateInUpload: new Set<string>(),
+    }
   }
 
   const itemsRaw = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : []
-  const normalized = itemsRaw.map(normalizeItem).filter((item) => item.trackingId)
+  const normalized = itemsRaw.map(normalizeItem).filter((item: { trackingId: any }) => item.trackingId)
 
   const uniqueMap = new Map<string, (typeof normalized)[number]>()
   const duplicateInUpload = new Set<string>()
-  normalized.forEach((item) => {
+  normalized.forEach((item: { trackingId: any }) => {
     const id = item.trackingId
     if (uniqueMap.has(id)) {
       duplicateInUpload.add(id)
@@ -151,16 +155,16 @@ function extractItemsFromText(text: string) {
     }
   })
 
-  return { items: Array.from(uniqueMap.values()), duplicateInUpload }
+  return { items: Array.from(uniqueMap.values()), duplicateInUpload, error: undefined }
 }
 
 function extractItemsFromParsed(parsed: any) {
   const itemsRaw = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : []
-  const normalized = itemsRaw.map(normalizeItem).filter((item) => item.trackingId)
+  const normalized = itemsRaw.map(normalizeItem).filter((item: { trackingId: any }) => item.trackingId)
 
   const uniqueMap = new Map<string, (typeof normalized)[number]>()
   const duplicateInUpload = new Set<string>()
-  normalized.forEach((item) => {
+  normalized.forEach((item: { trackingId: any }) => {
     const id = item.trackingId
     if (uniqueMap.has(id)) {
       duplicateInUpload.add(id)
@@ -169,7 +173,7 @@ function extractItemsFromParsed(parsed: any) {
     }
   })
 
-  return { items: Array.from(uniqueMap.values()), duplicateInUpload }
+  return { items: Array.from(uniqueMap.values()), duplicateInUpload, error: undefined }
 }
 
 export async function POST(req: Request) {

@@ -106,7 +106,7 @@ export default function CompaniesPage() {
         toast({
           variant: "destructive",
           title: t("companies.toastFailedTitle"),
-          description: errBody?.error || fallback.error?.message || resText || "Unknown error",
+          description: t("companies.toastFailedDesc"),
         })
         console.error("Create company failed", { status: res.status, body: errBody, fallbackError: fallback.error })
       }

@@ -2,7 +2,6 @@
 
 import type React from "react"
 import { useRouter } from "next/navigation" // Import router here
-import TestSupabase from "../test"
 import { useState } from "react"
 import { login, getUserRole } from "@/lib/auth"
 import { useStore } from "@/lib/store"
@@ -26,34 +25,37 @@ export default function LoginPage() {
   const router = useRouter() // Declare router here
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isLoggingIn) return;
-    setIsLoggingIn(true);
+    e.preventDefault()
+    if (isLoggingIn) return
+    setIsLoggingIn(true)
     try {
-      const { data, error } = await login(username, password);
+      const { data, error } = await login(username, password)
       if (error || !data.user) {
         toast({
           variant: "destructive",
           title: t.login.failed,
-          description: error?.message || t.login.userNotFound,
-        });
-        setIsLoggingIn(false);
-        return;
+          description: t.login.failedDesc || t.login.userNotFound,
+        })
+        setIsLoggingIn(false)
+        return
       }
       // Fetch user role
       const role = await getUserRole(data.user.id);
       const email = data.user.email || `${username}@rehab.local`;
       setCurrentUser({ id: data.user.id, name: username, email, role });
-      toast({ title: t.login.welcome, description: `Logged in as ${username}` });
-      router.push("/dashboard");
+      toast({
+        title: t.login.welcome,
+        description: (t.login.welcomeDesc || "Welcome, {name}.").replace("{name}", username),
+      })
+      router.push("/dashboard")
     } catch (err: any) {
       toast({
         variant: "destructive",
         title: t.login.failed,
-        description: err.message || t.login.userNotFound,
-      });
+        description: t.login.failedDesc || t.login.userNotFound,
+      })
     } finally {
-      setIsLoggingIn(false);
+      setIsLoggingIn(false)
     }
   }
 
@@ -109,7 +111,6 @@ export default function LoginPage() {
         </form>
       </Card>
       <Toaster />
-       <TestSupabase /> 
     </div>
   )
 }
