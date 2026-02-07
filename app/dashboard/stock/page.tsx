@@ -32,6 +32,7 @@ function StockContent() {
   const [isBulkOpen, setIsBulkOpen] = useState(false)
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [search, setSearch] = useState("")
+  const [showDuplicates, setShowDuplicates] = useState(false)
 
   const [products, setProducts] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
@@ -155,8 +156,7 @@ function StockContent() {
           body: formData,
         })
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          errors.push(`${bulkFiles[i].name}: ${err?.error || "OCR failed"}`)
+          errors.push(bulkFiles[i].name)
           continue
         }
         const body = await res.json()
@@ -164,7 +164,7 @@ function StockContent() {
         allItems.push(...items)
       } catch (err) {
         console.error(`OCR failed for ${bulkFiles[i].name}`, err)
-        errors.push(`${bulkFiles[i].name}: OCR failed`)
+        errors.push(bulkFiles[i].name)
       }
     }
 
@@ -178,7 +178,7 @@ function StockContent() {
     setBulkItems(Array.from(uniqueMap.values()))
 
     if (errors.length > 0) {
-      setBulkError(errors.join(" | "))
+      setBulkError(t.stock.importErrorSummary.replace("{count}", String(errors.length)))
     }
     setBulkLoading(false)
   }
@@ -196,8 +196,7 @@ function StockContent() {
         body: JSON.stringify({ items: itemsToSubmit, companyId: bulkCompanyId }),
       })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setBulkError(err?.error || "Bulk insert failed")
+        setBulkError(t.stock.importSubmitFailed)
         return
       }
       const body = await res.json()
@@ -231,7 +230,7 @@ function StockContent() {
       resetBulk()
     } catch (err) {
       console.error("Bulk insert failed", err)
-      setBulkError("Bulk insert failed")
+      setBulkError(t.stock.importSubmitFailed)
     } finally {
       setBulkSubmitting(false)
     }
@@ -294,6 +293,11 @@ function StockContent() {
       }
     } catch (err) {
       console.error("Create product API failed", err)
+      toast({
+        variant: "destructive",
+        title: t.stock.createFailedTitle,
+        description: t.stock.createFailedDesc,
+      })
     }
 
     const { data: existing } = await supabase.from("products").select("id").eq("id", customId).maybeSingle()
@@ -345,6 +349,11 @@ function StockContent() {
         return
       }
       console.error("Create product failed", error)
+      toast({
+        variant: "destructive",
+        title: t.stock.createFailedTitle,
+        description: t.stock.createFailedDesc,
+      })
     }
   }
 
@@ -363,11 +372,32 @@ function StockContent() {
 
   const canDelete = isSuperRole(currentUser?.role) || currentUser?.role === "admin"
 
+  const normalizeId = (value: string | number | null | undefined) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/[^a-z0-9]/g, "")
+
+  const duplicateIdSet = (() => {
+    const counts = new Map<string, number>()
+    products.forEach((p) => {
+      const key = normalizeId(p.id)
+      if (!key) return
+      counts.set(key, (counts.get(key) || 0) + 1)
+    })
+    const duplicates = new Set<string>()
+    counts.forEach((count, key) => {
+      if (count > 1) duplicates.add(key)
+    })
+    return duplicates
+  })()
+
   const filteredProducts = products.filter((p) => {
     const matchesCompany = filterCompany === "all" || String(p.company_id) === filterCompany
     const matchesSearch =
       (p.client_name || "").toLowerCase().includes(search.toLowerCase()) || String(p.id).includes(search)
-    return matchesCompany && matchesSearch
+    const matchesDuplicate = !showDuplicates || duplicateIdSet.has(normalizeId(p.id))
+    return matchesCompany && matchesSearch && matchesDuplicate
   })
 
   return (
@@ -688,6 +718,14 @@ function StockContent() {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              type="button"
+              variant={showDuplicates ? "default" : "outline"}
+              className="gap-2"
+              onClick={() => setShowDuplicates((prev) => !prev)}
+            >
+              {t.stock.filterDuplicates || "Filter duplicates"}
+            </Button>
           </div>
         </div>
 

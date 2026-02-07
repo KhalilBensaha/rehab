@@ -80,7 +80,7 @@ export default function AdminsPage() {
         toast({
           variant: "destructive",
           title: t("adminsSection.createFailedTitle"),
-          description: body?.error || t("adminsSection.createFailedDesc"),
+          description: t("adminsSection.createFailedDesc"),
         })
         return
       }
