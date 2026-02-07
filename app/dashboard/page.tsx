@@ -8,6 +8,8 @@ import { useStore } from "@/lib/store"
 import { isSuperRole } from "@/lib/utils"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Package, Truck, Building2, Users } from "lucide-react"
 
 export default function OverviewPage() {
@@ -18,6 +20,8 @@ export default function OverviewPage() {
   const [workers, setWorkers] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
   const [admins, setAdmins] = useState<any[]>([])
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
 
   useEffect(() => {
     const load = async () => {
@@ -43,6 +47,48 @@ export default function OverviewPage() {
 
   const isSuperAdmin = isSuperRole(currentUser?.role)
 
+  const inDateRange = (value?: string | null) => {
+    if (!dateFrom && !dateTo) return true
+    if (!value) return false
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return false
+    const fromOk = !dateFrom || date >= new Date(dateFrom)
+    const toOk = !dateTo || date <= new Date(`${dateTo}T23:59:59`)
+    return fromOk && toOk
+  }
+
+  const rangeProducts = products.filter((p) => inDateRange(p.created_at))
+  const deliveredInRange = rangeProducts.filter((p) => p.status === "delivered")
+  const inDeliveryInRange = rangeProducts.filter((p) => p.status === "delivery")
+  const revenueInRange = deliveredInRange.reduce((acc, p) => acc + Number(p.price || 0), 0)
+
+  const kpis = [
+    {
+      name: t("dashboard.kpiProducts"),
+      value: rangeProducts.length,
+      icon: Package,
+      color: "text-blue-500",
+    },
+    {
+      name: t("dashboard.kpiDelivered"),
+      value: deliveredInRange.length,
+      icon: Truck,
+      color: "text-green-600",
+    },
+    {
+      name: t("dashboard.kpiInDelivery"),
+      value: inDeliveryInRange.length,
+      icon: Truck,
+      color: "text-amber-600",
+    },
+    {
+      name: t("dashboard.kpiRevenue"),
+      value: `${revenueInRange.toFixed(2)} ${t("common.currency")}`,
+      icon: Building2,
+      color: "text-rehab-dark",
+    },
+  ]
+
   const stats = [
     { name: t("dashboard.stats.products"), value: products.length, icon: Package, color: "text-blue-500", href: "/dashboard/stock" },
     { name: t("dashboard.stats.workers"), value: workers.length, icon: Truck, color: "text-rehab-dark", href: "/dashboard/workers" },
@@ -59,6 +105,37 @@ export default function OverviewPage() {
           <h1 className="text-3xl font-bold">{t("dashboard.title")}</h1>
           <p className="text-muted-foreground">{t("dashboard.subtitle")}</p>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("dashboard.kpiTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid gap-2">
+                <Label>{t("dashboard.dateFrom")}</Label>
+                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label>{t("dashboard.dateTo")}</Label>
+                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {kpis.map((kpi) => (
+                <Card key={kpi.name}>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                    <CardTitle className="text-sm font-medium">{kpi.name}</CardTitle>
+                    <kpi.icon className={`h-4 w-4 ${kpi.color}`} />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{kpi.value}</div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         <div className={`grid grid-cols-1 md:grid-cols-2 ${isSuperAdmin ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-6`}>
           {stats.map((stat) => (

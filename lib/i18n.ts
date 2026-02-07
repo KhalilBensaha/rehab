@@ -47,6 +47,13 @@ export const translations = {
     dashboard: {
       title: "REHAB Dashboard",
       subtitle: "Welcome back. Here is what is happening today.",
+      kpiTitle: "KPIs",
+      dateFrom: "From",
+      dateTo: "To",
+      kpiProducts: "Products (range)",
+      kpiDelivered: "Delivered (range)",
+      kpiInDelivery: "In delivery (range)",
+      kpiRevenue: "Revenue (delivered)",
       stats: {
         products: "Total Products",
         workers: "Active Workers",
@@ -350,6 +357,13 @@ export const translations = {
     dashboard: {
       title: "Tableau de bord REHAB",
       subtitle: "Bon retour. Voici ce qu'il se passe aujourd'hui.",
+      kpiTitle: "Indicateurs",
+      dateFrom: "Du",
+      dateTo: "Au",
+      kpiProducts: "Produits (période)",
+      kpiDelivered: "Livrés (période)",
+      kpiInDelivery: "En livraison (période)",
+      kpiRevenue: "Revenu (livrés)",
       stats: {
         products: "Produits totaux",
         workers: "Livreurs actifs",
@@ -653,6 +667,13 @@ export const translations = {
     dashboard: {
       title: "لوحة تحكم REHAB",
       subtitle: "مرحباً بعودتك. هذا ما يحدث اليوم.",
+      kpiTitle: "مؤشرات الأداء",
+      dateFrom: "من",
+      dateTo: "إلى",
+      kpiProducts: "المنتجات (الفترة)",
+      kpiDelivered: "تم التسليم (الفترة)",
+      kpiInDelivery: "قيد التوصيل (الفترة)",
+      kpiRevenue: "الإيراد (المسلّم)",
       stats: {
         products: "إجمالي المنتجات",
         workers: "العمال النشطون",
