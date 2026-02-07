@@ -35,6 +35,13 @@ function StockContent() {
   const [showDuplicates, setShowDuplicates] = useState(false)
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [assignedFilter, setAssignedFilter] = useState<string>("all")
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
+  const [filterName, setFilterName] = useState("")
+  const [savedFilters, setSavedFilters] = useState<any[]>([])
+  const [selectedSavedFilter, setSelectedSavedFilter] = useState<string>("")
 
   const [products, setProducts] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
@@ -129,6 +136,24 @@ function StockContent() {
     }
     load()
   }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const stored = window.localStorage.getItem("stock.savedFilters")
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed)) setSavedFilters(parsed)
+      } catch {
+        // ignore
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    window.localStorage.setItem("stock.savedFilters", JSON.stringify(savedFilters))
+  }, [savedFilters])
 
   const resetBulk = () => {
     setBulkCompanyId("")
@@ -409,8 +434,57 @@ function StockContent() {
     const matchesSearch =
       (p.client_name || "").toLowerCase().includes(search.toLowerCase()) || String(p.id).includes(search)
     const matchesDuplicate = !showDuplicates || duplicateIdSet.has(normalizeId(p.id))
-    return matchesCompany && matchesSearch && matchesDuplicate
+    const matchesStatus = statusFilter === "all" || normalizeStatus(p.status) === statusFilter
+    const isAssigned = Boolean(p.delivery_worker_id)
+    const matchesAssigned =
+      assignedFilter === "all" || (assignedFilter === "yes" ? isAssigned : !isAssigned)
+    const createdAt = p.created_at ? new Date(p.created_at) : null
+    const fromOk = !dateFrom || (createdAt ? createdAt >= new Date(dateFrom) : false)
+    const toOk = !dateTo || (createdAt ? createdAt <= new Date(`${dateTo}T23:59:59`) : false)
+    return matchesCompany && matchesSearch && matchesDuplicate && matchesStatus && matchesAssigned && fromOk && toOk
   })
+
+  const handleSaveFilter = () => {
+    const name = filterName.trim()
+    if (!name) return
+    const payload = {
+      id: `${Date.now()}`,
+      name,
+      filterCompany,
+      search,
+      showDuplicates,
+      statusFilter,
+      assignedFilter,
+      dateFrom,
+      dateTo,
+    }
+    setSavedFilters((prev) => [payload, ...prev])
+    setFilterName("")
+  }
+
+  const applySavedFilter = (id: string) => {
+    const found = savedFilters.find((f) => f.id === id)
+    if (!found) return
+    setSelectedSavedFilter(id)
+    setFilterCompany(found.filterCompany || "all")
+    setSearch(found.search || "")
+    setShowDuplicates(Boolean(found.showDuplicates))
+    setStatusFilter(found.statusFilter || "all")
+    setAssignedFilter(found.assignedFilter || "all")
+    setDateFrom(found.dateFrom || "")
+    setDateTo(found.dateTo || "")
+  }
+
+  const clearFilters = () => {
+    setFilterCompany("all")
+    setSearch("")
+    setShowDuplicates(false)
+    setStatusFilter("all")
+    setAssignedFilter("all")
+    setDateFrom("")
+    setDateTo("")
+    setSelectedSavedFilter("")
+  }
 
   const buildCompanyName = (companyId: any) =>
     companies.find((c) => String(c.id) === String(companyId))?.name || "-"
@@ -854,6 +928,90 @@ function StockContent() {
             <Button type="button" variant="outline" onClick={handleExportPdf}>
               {t.stock.exportPdf || "Export PDF"}
             </Button>
+          </div>
+        </div>
+
+        <div className="bg-card p-4 rounded-lg border space-y-4">
+          <div className="font-medium">{t.stock.advancedSearch || "Advanced search"}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid gap-2">
+              <Label>{t.stock.statusFilter || "Status"}</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t.stock.statusFilter || "Status"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t.stock.statusAll || "All statuses"}</SelectItem>
+                  <SelectItem value="in_stock">{t.stock.status.inStock}</SelectItem>
+                  <SelectItem value="delivery">{t.stock.status.delivery}</SelectItem>
+                  <SelectItem value="delivered">{t.stock.status.delivered}</SelectItem>
+                  <SelectItem value="canceled">{t.stock.status.canceled}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>{t.stock.assignedFilter || "Assigned"}</Label>
+              <Select value={assignedFilter} onValueChange={setAssignedFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t.stock.assignedFilter || "Assigned"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t.stock.assignedAll || "All"}</SelectItem>
+                  <SelectItem value="yes">{t.stock.assignedYes || "Assigned"}</SelectItem>
+                  <SelectItem value="no">{t.stock.assignedNo || "Not assigned"}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>{t.stock.dateFrom || "From"}</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label>{t.stock.dateTo || "To"}</Label>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="md:col-span-2 grid gap-2">
+              <Label>{t.stock.filterName || "Filter name"}</Label>
+              <Input
+                value={filterName}
+                onChange={(e) => setFilterName(e.target.value)}
+                placeholder={t.stock.filterNamePlaceholder || "e.g. In stock today"}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" onClick={handleSaveFilter}>
+                {t.stock.saveFilter || "Save filter"}
+              </Button>
+              <Button type="button" variant="outline" onClick={clearFilters}>
+                {t.stock.clearFilters || "Clear"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>{t.stock.savedFilters || "Saved filters"}</Label>
+              <Select value={selectedSavedFilter} onValueChange={applySavedFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t.stock.selectSavedFilter || "Select saved filter"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {savedFilters.length === 0 && (
+                    <SelectItem value="empty" disabled>
+                      {t.stock.noSavedFilters || "No saved filters"}
+                    </SelectItem>
+                  )}
+                  {savedFilters.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
