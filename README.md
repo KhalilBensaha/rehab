@@ -1,6 +1,6 @@
 # Delivery Management System
 
-A Next.js dashboard for managing deliveries, products, companies, workers, and treasury analytics. Includes OCR-powered bulk product import (PDF/image) using Anthropic Claude.
+Production-ready Next.js dashboard for managing deliveries, products, companies, workers, and treasury analytics. Includes OCR-powered bulk product import (PDF/image) using Anthropic Claude.
 
 ## Features
 
@@ -47,6 +47,7 @@ Create .env.local:
 - ANTHROPIC_API_KEY=
 - CLAUDE_OCR_MODEL= (optional, default: claude-3-5-sonnet-latest)
 - CLAUDE_OCR_FALLBACK_MODEL= (optional, default: claude-3-haiku-20240307)
+- NEXT_PUBLIC_SUPABASE_WORKERS_BUCKET= (optional, default: workers)
 
 ## Install
 
@@ -69,9 +70,42 @@ npm run start
 
 ## Supabase Setup
 
-- Tables used: products, companies, delivery_workers, profiles
-- Storage bucket: workers (or set NEXT_PUBLIC_SUPABASE_WORKERS_BUCKET)
-- Ensure products.id is unique to prevent duplicates
+### Tables
+
+- products
+	- id (text, primary key)
+	- client_name (text)
+	- phone (text)
+	- price (numeric)
+	- status (text)
+	- company_id (uuid / text, FK to companies)
+	- delivery_worker_id (uuid / text, FK to delivery_workers)
+	- created_at (timestamp)
+- companies
+	- id (uuid / text, primary key)
+	- name (text)
+	- combenef (numeric)
+	- created_at (timestamp)
+- delivery_workers
+	- id (uuid / text, primary key)
+	- name (text)
+	- phone (text)
+	- product_fee (numeric)
+	- profile_image_url (text)
+	- certificate_image_url (text)
+	- created_at (timestamp)
+- profiles
+	- id (uuid, primary key)
+	- role (text)
+
+### Storage
+
+- Bucket: workers (or set NEXT_PUBLIC_SUPABASE_WORKERS_BUCKET)
+
+### Notes
+
+- Ensure products.id is unique to prevent duplicates.
+- Configure RLS policies appropriate to your auth model.
 
 ## OCR Import Flow
 
@@ -87,10 +121,23 @@ npm run start
 - Bulk add: duplicates are skipped and a popup shows count
 - Server-side: bulk insert uses upsert ignoreDuplicates
 
+## Production Notes
+
+- Set all environment variables in your deployment platform.
+- Use a Supabase service role key only on server-side API routes.
+- Review RLS policies and storage access before going live.
+- For OCR, ensure your Anthropic API key has sufficient quota.
+
+## Scripts
+
+- npm run dev
+- npm run build
+- npm run start
+
 ## Notes
 
-- Login uses Supabase Auth; session is restored on refresh
-- Treasure metrics only count delivered products
+- Login uses Supabase Auth; session is restored on refresh.
+- Treasure metrics only count delivered products.
 
 ## License
 
