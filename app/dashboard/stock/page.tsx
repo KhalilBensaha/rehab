@@ -33,9 +33,12 @@ function StockContent() {
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [search, setSearch] = useState("")
   const [showDuplicates, setShowDuplicates] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
 
   const [products, setProducts] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
+  const [workers, setWorkers] = useState<any[]>([])
 
   const [bulkCompanyId, setBulkCompanyId] = useState("")
   const [bulkFiles, setBulkFiles] = useState<File[]>([])
@@ -74,14 +77,16 @@ function StockContent() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: p }, companiesRes] = await Promise.all([
+      const [{ data: p }, companiesRes, { data: workersData }] = await Promise.all([
         supabase
           .from("products")
           .select("id, client_name, phone, price, status, company_id, delivery_worker_id, created_at")
           .order("created_at", { ascending: false }),
         fetch("/api/companies/list"),
+        supabase.from("delivery_workers").select("id, name"),
       ])
       if (p) setProducts(p)
+      if (workersData) setWorkers(workersData)
 
       let companiesData: any[] | undefined
       try {
@@ -371,6 +376,13 @@ function StockContent() {
   }
 
   const canDelete = isSuperRole(currentUser?.role) || currentUser?.role === "admin"
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return "-"
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return "-"
+    return date.toLocaleString(locale || "en")
+  }
 
   const normalizeId = (value: string | number | null | undefined) =>
     String(value || "")
@@ -744,7 +756,14 @@ function StockContent() {
             <TableBody>
               {filteredProducts.length > 0 ? (
                 filteredProducts.map((p) => (
-                  <TableRow key={p.id}>
+                  <TableRow
+                    key={p.id}
+                    className="cursor-pointer"
+                    onClick={() => {
+                      setSelectedProduct(p)
+                      setIsDetailsOpen(true)
+                    }}
+                  >
                     <TableCell className="font-mono text-xs">{p.id}</TableCell>
                     <TableCell>
                       <div className="font-medium">{p.client_name}</div>
@@ -773,6 +792,7 @@ function StockContent() {
                         <Select
                           value={normalizeStatus(p.status)}
                           onValueChange={(val) => handleStatusChange(p.id, normalizeStatus(val))}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <SelectTrigger className="w-[130px] h-8">
                             <SelectValue />
@@ -788,7 +808,10 @@ function StockContent() {
                           variant="destructive"
                           size="sm"
                           disabled={!canDelete}
-                          onClick={() => handleDeleteProduct(p.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteProduct(p.id)
+                          }}
                         >
                           {t.common.delete}
                         </Button>
@@ -806,6 +829,64 @@ function StockContent() {
             </TableBody>
           </Table>
         </div>
+
+        <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t.stock.detailTitle || "Product details"}</DialogTitle>
+            </DialogHeader>
+            {selectedProduct && (
+              <div className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="text-muted-foreground">{t.common.id}</div>
+                  <div className="font-mono">{selectedProduct.id}</div>
+
+                  <div className="text-muted-foreground">{t.stock.client}</div>
+                  <div>{selectedProduct.client_name || "-"}</div>
+
+                  <div className="text-muted-foreground">{t.stock.company}</div>
+                  <div>{companies.find((c) => c.id === selectedProduct.company_id)?.name || "-"}</div>
+
+                  <div className="text-muted-foreground">{t.stock.phone}</div>
+                  <div>{selectedProduct.phone || "-"}</div>
+
+                  <div className="text-muted-foreground">{t.stock.price}</div>
+                  <div>
+                    {Number(selectedProduct.price || 0).toFixed(2)} {t.common.currency}
+                  </div>
+
+                  <div className="text-muted-foreground">{t.stock.table.status}</div>
+                  <div>{STATUS_LABELS[normalizeStatus(selectedProduct.status)]}</div>
+
+                  <div className="text-muted-foreground">{t.stock.detailCreatedAt || "Added on"}</div>
+                  <div>{formatDateTime(selectedProduct.created_at)}</div>
+
+                  <div className="text-muted-foreground">{t.stock.detailAssigned || "Assigned"}</div>
+                  <div>
+                    {selectedProduct.delivery_worker_id
+                      ? t.stock.detailYes || "Yes"
+                      : t.stock.detailNo || "No"}
+                  </div>
+
+                  {selectedProduct.delivery_worker_id && (
+                    <>
+                      <div className="text-muted-foreground">{t.stock.detailWorker || "Worker"}</div>
+                      <div>
+                        {workers.find((w) => String(w.id) === String(selectedProduct.delivery_worker_id))?.name ||
+                          selectedProduct.delivery_worker_id}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="pt-2 flex justify-end">
+                  <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>
+                    {t.common.cancel}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   )
