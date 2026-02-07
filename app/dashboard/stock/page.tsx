@@ -33,9 +33,19 @@ function StockContent() {
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [search, setSearch] = useState("")
   const [showDuplicates, setShowDuplicates] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [assignedFilter, setAssignedFilter] = useState<string>("all")
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
+  const [filterName, setFilterName] = useState("")
+  const [savedFilters, setSavedFilters] = useState<any[]>([])
+  const [selectedSavedFilter, setSelectedSavedFilter] = useState<string>("")
 
   const [products, setProducts] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
+  const [workers, setWorkers] = useState<any[]>([])
 
   const [bulkCompanyId, setBulkCompanyId] = useState("")
   const [bulkFiles, setBulkFiles] = useState<File[]>([])
@@ -74,14 +84,16 @@ function StockContent() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: p }, companiesRes] = await Promise.all([
+      const [{ data: p }, companiesRes, { data: workersData }] = await Promise.all([
         supabase
           .from("products")
           .select("id, client_name, phone, price, status, company_id, delivery_worker_id, created_at")
           .order("created_at", { ascending: false }),
         fetch("/api/companies/list"),
+        supabase.from("delivery_workers").select("id, name"),
       ])
       if (p) setProducts(p)
+      if (workersData) setWorkers(workersData)
 
       let companiesData: any[] | undefined
       try {
@@ -124,6 +136,24 @@ function StockContent() {
     }
     load()
   }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const stored = window.localStorage.getItem("stock.savedFilters")
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed)) setSavedFilters(parsed)
+      } catch {
+        // ignore
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    window.localStorage.setItem("stock.savedFilters", JSON.stringify(savedFilters))
+  }, [savedFilters])
 
   const resetBulk = () => {
     setBulkCompanyId("")
@@ -372,6 +402,13 @@ function StockContent() {
 
   const canDelete = isSuperRole(currentUser?.role) || currentUser?.role === "admin"
 
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return "-"
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return "-"
+    return date.toLocaleString(locale || "en")
+  }
+
   const normalizeId = (value: string | number | null | undefined) =>
     String(value || "")
       .toLowerCase()
@@ -397,8 +434,167 @@ function StockContent() {
     const matchesSearch =
       (p.client_name || "").toLowerCase().includes(search.toLowerCase()) || String(p.id).includes(search)
     const matchesDuplicate = !showDuplicates || duplicateIdSet.has(normalizeId(p.id))
-    return matchesCompany && matchesSearch && matchesDuplicate
+    const matchesStatus = statusFilter === "all" || normalizeStatus(p.status) === statusFilter
+    const isAssigned = Boolean(p.delivery_worker_id)
+    const matchesAssigned =
+      assignedFilter === "all" || (assignedFilter === "yes" ? isAssigned : !isAssigned)
+    const createdAt = p.created_at ? new Date(p.created_at) : null
+    const fromOk = !dateFrom || (createdAt ? createdAt >= new Date(dateFrom) : false)
+    const toOk = !dateTo || (createdAt ? createdAt <= new Date(`${dateTo}T23:59:59`) : false)
+    return matchesCompany && matchesSearch && matchesDuplicate && matchesStatus && matchesAssigned && fromOk && toOk
   })
+
+  const handleSaveFilter = () => {
+    const name = filterName.trim()
+    if (!name) return
+    const payload = {
+      id: `${Date.now()}`,
+      name,
+      filterCompany,
+      search,
+      showDuplicates,
+      statusFilter,
+      assignedFilter,
+      dateFrom,
+      dateTo,
+    }
+    setSavedFilters((prev) => [payload, ...prev])
+    setFilterName("")
+  }
+
+  const applySavedFilter = (id: string) => {
+    const found = savedFilters.find((f) => f.id === id)
+    if (!found) return
+    setSelectedSavedFilter(id)
+    setFilterCompany(found.filterCompany || "all")
+    setSearch(found.search || "")
+    setShowDuplicates(Boolean(found.showDuplicates))
+    setStatusFilter(found.statusFilter || "all")
+    setAssignedFilter(found.assignedFilter || "all")
+    setDateFrom(found.dateFrom || "")
+    setDateTo(found.dateTo || "")
+  }
+
+  const clearFilters = () => {
+    setFilterCompany("all")
+    setSearch("")
+    setShowDuplicates(false)
+    setStatusFilter("all")
+    setAssignedFilter("all")
+    setDateFrom("")
+    setDateTo("")
+    setSelectedSavedFilter("")
+  }
+
+  const buildCompanyName = (companyId: any) =>
+    companies.find((c) => String(c.id) === String(companyId))?.name || "-"
+
+  const handleExportCsv = () => {
+    if (filteredProducts.length === 0) return
+    const headers = [
+      t.stock.table.id,
+      t.stock.table.client,
+      t.stock.table.company,
+      t.stock.phone,
+      t.stock.table.price,
+      t.stock.table.status,
+      t.stock.detailCreatedAt || "Added on",
+      t.stock.detailWorker || "Worker",
+    ]
+    const rows = filteredProducts.map((p) => [
+      String(p.id),
+      p.client_name || "",
+      buildCompanyName(p.company_id),
+      p.phone || "",
+      Number(p.price || 0).toFixed(2),
+      STATUS_LABELS[normalizeStatus(p.status)],
+      formatDateTime(p.created_at),
+      p.delivery_worker_id
+        ? workers.find((w) => String(w.id) === String(p.delivery_worker_id))?.name || String(p.delivery_worker_id)
+        : "",
+    ])
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n")
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "stock-export.csv"
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportPdf = () => {
+    if (filteredProducts.length === 0) return
+    const dateText = new Date().toLocaleString(locale || "en")
+    const html = `<!doctype html>
+<html dir="${t.dir}">
+  <head>
+    <meta charset="utf-8" />
+    <title>${t.stock.exportTitle || "Stock Export"}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
+      h1 { font-size: 18px; margin: 0 0 4px 0; }
+      .muted { color: #666; font-size: 12px; }
+      .info { margin: 12px 0 16px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 12px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; text-align: ${t.dir === "rtl" ? "right" : "left"}; }
+      th { background: #f5f5f5; }
+      .right { text-align: ${t.dir === "rtl" ? "left" : "right"}; }
+      @media print { body { padding: 0; } }
+    </style>
+  </head>
+  <body>
+    <h1>${t.stock.exportTitle || "Stock Export"}</h1>
+    <div class="muted">${dateText}</div>
+    <div class="info">
+      <div><strong>${t.stock.table.company}:</strong> ${filterCompany === "all" ? t.stock.filterAll : buildCompanyName(filterCompany)}</div>
+      <div><strong>${t.stock.exportCount || "Products"}:</strong> ${filteredProducts.length}</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>${t.stock.table.id}</th>
+          <th>${t.stock.table.client}</th>
+          <th>${t.stock.table.company}</th>
+          <th>${t.stock.phone}</th>
+          <th class="right">${t.stock.table.price}</th>
+          <th>${t.stock.table.status}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filteredProducts
+          .map(
+            (p) => `
+          <tr>
+            <td>${p.id}</td>
+            <td>${p.client_name || ""}</td>
+            <td>${buildCompanyName(p.company_id)}</td>
+            <td>${p.phone || "-"}</td>
+            <td class="right">${Number(p.price || 0).toFixed(2)} ${t.common.currency}</td>
+            <td>${STATUS_LABELS[normalizeStatus(p.status)]}</td>
+          </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>
+  </body>
+</html>`
+
+    const printWindow = window.open("", "_blank", "width=1024,height=768")
+    if (!printWindow) return
+    printWindow.document.open()
+    printWindow.document.write(html)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => {
+      printWindow.print()
+      printWindow.close()
+    }, 300)
+  }
 
   return (
     <DashboardLayout>
@@ -726,6 +922,96 @@ function StockContent() {
             >
               {t.stock.filterDuplicates || "Filter duplicates"}
             </Button>
+            <Button type="button" variant="outline" onClick={handleExportCsv}>
+              {t.stock.exportCsv || "Export CSV"}
+            </Button>
+            <Button type="button" variant="outline" onClick={handleExportPdf}>
+              {t.stock.exportPdf || "Export PDF"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="bg-card p-4 rounded-lg border space-y-4">
+          <div className="font-medium">{t.stock.advancedSearch || "Advanced search"}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid gap-2">
+              <Label>{t.stock.statusFilter || "Status"}</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t.stock.statusFilter || "Status"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t.stock.statusAll || "All statuses"}</SelectItem>
+                  <SelectItem value="in_stock">{t.stock.status.inStock}</SelectItem>
+                  <SelectItem value="delivery">{t.stock.status.delivery}</SelectItem>
+                  <SelectItem value="delivered">{t.stock.status.delivered}</SelectItem>
+                  <SelectItem value="canceled">{t.stock.status.canceled}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>{t.stock.assignedFilter || "Assigned"}</Label>
+              <Select value={assignedFilter} onValueChange={setAssignedFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t.stock.assignedFilter || "Assigned"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t.stock.assignedAll || "All"}</SelectItem>
+                  <SelectItem value="yes">{t.stock.assignedYes || "Assigned"}</SelectItem>
+                  <SelectItem value="no">{t.stock.assignedNo || "Not assigned"}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>{t.stock.dateFrom || "From"}</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label>{t.stock.dateTo || "To"}</Label>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="md:col-span-2 grid gap-2">
+              <Label>{t.stock.filterName || "Filter name"}</Label>
+              <Input
+                value={filterName}
+                onChange={(e) => setFilterName(e.target.value)}
+                placeholder={t.stock.filterNamePlaceholder || "e.g. In stock today"}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" onClick={handleSaveFilter}>
+                {t.stock.saveFilter || "Save filter"}
+              </Button>
+              <Button type="button" variant="outline" onClick={clearFilters}>
+                {t.stock.clearFilters || "Clear"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>{t.stock.savedFilters || "Saved filters"}</Label>
+              <Select value={selectedSavedFilter} onValueChange={applySavedFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t.stock.selectSavedFilter || "Select saved filter"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {savedFilters.length === 0 && (
+                    <SelectItem value="empty" disabled>
+                      {t.stock.noSavedFilters || "No saved filters"}
+                    </SelectItem>
+                  )}
+                  {savedFilters.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
@@ -744,7 +1030,14 @@ function StockContent() {
             <TableBody>
               {filteredProducts.length > 0 ? (
                 filteredProducts.map((p) => (
-                  <TableRow key={p.id}>
+                  <TableRow
+                    key={p.id}
+                    className="cursor-pointer"
+                    onClick={() => {
+                      setSelectedProduct(p)
+                      setIsDetailsOpen(true)
+                    }}
+                  >
                     <TableCell className="font-mono text-xs">{p.id}</TableCell>
                     <TableCell>
                       <div className="font-medium">{p.client_name}</div>
@@ -773,6 +1066,7 @@ function StockContent() {
                         <Select
                           value={normalizeStatus(p.status)}
                           onValueChange={(val) => handleStatusChange(p.id, normalizeStatus(val))}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <SelectTrigger className="w-[130px] h-8">
                             <SelectValue />
@@ -788,7 +1082,10 @@ function StockContent() {
                           variant="destructive"
                           size="sm"
                           disabled={!canDelete}
-                          onClick={() => handleDeleteProduct(p.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteProduct(p.id)
+                          }}
                         >
                           {t.common.delete}
                         </Button>
@@ -806,6 +1103,64 @@ function StockContent() {
             </TableBody>
           </Table>
         </div>
+
+        <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t.stock.detailTitle || "Product details"}</DialogTitle>
+            </DialogHeader>
+            {selectedProduct && (
+              <div className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="text-muted-foreground">{t.common.id}</div>
+                  <div className="font-mono">{selectedProduct.id}</div>
+
+                  <div className="text-muted-foreground">{t.stock.client}</div>
+                  <div>{selectedProduct.client_name || "-"}</div>
+
+                  <div className="text-muted-foreground">{t.stock.company}</div>
+                  <div>{companies.find((c) => c.id === selectedProduct.company_id)?.name || "-"}</div>
+
+                  <div className="text-muted-foreground">{t.stock.phone}</div>
+                  <div>{selectedProduct.phone || "-"}</div>
+
+                  <div className="text-muted-foreground">{t.stock.price}</div>
+                  <div>
+                    {Number(selectedProduct.price || 0).toFixed(2)} {t.common.currency}
+                  </div>
+
+                  <div className="text-muted-foreground">{t.stock.table.status}</div>
+                  <div>{STATUS_LABELS[normalizeStatus(selectedProduct.status)]}</div>
+
+                  <div className="text-muted-foreground">{t.stock.detailCreatedAt || "Added on"}</div>
+                  <div>{formatDateTime(selectedProduct.created_at)}</div>
+
+                  <div className="text-muted-foreground">{t.stock.detailAssigned || "Assigned"}</div>
+                  <div>
+                    {selectedProduct.delivery_worker_id
+                      ? t.stock.detailYes || "Yes"
+                      : t.stock.detailNo || "No"}
+                  </div>
+
+                  {selectedProduct.delivery_worker_id && (
+                    <>
+                      <div className="text-muted-foreground">{t.stock.detailWorker || "Worker"}</div>
+                      <div>
+                        {workers.find((w) => String(w.id) === String(selectedProduct.delivery_worker_id))?.name ||
+                          selectedProduct.delivery_worker_id}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="pt-2 flex justify-end">
+                  <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>
+                    {t.common.cancel}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   )
