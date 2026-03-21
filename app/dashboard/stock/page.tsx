@@ -50,6 +50,7 @@ function StockContent() {
   const [bulkCompanyId, setBulkCompanyId] = useState("")
   const [bulkFiles, setBulkFiles] = useState<File[]>([])
   const [bulkItems, setBulkItems] = useState<BulkItem[]>([])
+  const [bulkShowOnlyDuplicates, setBulkShowOnlyDuplicates] = useState(false)
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 })
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
@@ -79,6 +80,12 @@ function StockContent() {
     }
     return "in_stock"
   }
+
+  const normalizeTrackingId = (value: string | null | undefined) =>
+    String(value || "")
+      .trim()
+      .replace(/\s+/g, "")
+      .toLowerCase()
 
   const canBulk = isSuperRole(currentUser?.role) || currentUser?.role === "admin"
 
@@ -159,6 +166,7 @@ function StockContent() {
     setBulkCompanyId("")
     setBulkFiles([])
     setBulkItems([])
+    setBulkShowOnlyDuplicates(false)
     setBulkLoading(false)
     setBulkProgress({ current: 0, total: 0 })
     setBulkSubmitting(false)
@@ -198,14 +206,27 @@ function StockContent() {
       }
     }
 
-    // Deduplicate across all files
-    const uniqueMap = new Map<string, BulkItem>()
+    // Keep all extracted rows, but mark duplicates and existing items before submit preview
+    const dbExistingSet = new Set(products.map((p) => normalizeTrackingId(String(p.id))))
+    const counts = new Map<string, number>()
     allItems.forEach((item) => {
-      if (item.trackingId && !uniqueMap.has(item.trackingId)) {
-        uniqueMap.set(item.trackingId, item)
+      const key = normalizeTrackingId(item.trackingId)
+      if (!key) return
+      counts.set(key, (counts.get(key) || 0) + 1)
+    })
+
+    const prepared = allItems.map((item) => {
+      const key = normalizeTrackingId(item.trackingId)
+      const duplicateInUpload = key ? (counts.get(key) || 0) > 1 : false
+      const exists = key ? dbExistingSet.has(key) : false
+      return {
+        ...item,
+        duplicateInUpload,
+        exists,
       }
     })
-    setBulkItems(Array.from(uniqueMap.values()))
+
+    setBulkItems(prepared)
 
     if (errors.length > 0) {
       setBulkError(t.stock.importErrorSummary.replace("{count}", String(errors.length)))
@@ -215,7 +236,28 @@ function StockContent() {
 
   const handleBulkSubmit = async () => {
     if (!bulkCompanyId) return
-    const itemsToSubmit = bulkItems.filter((item) => item.trackingId && !item.exists && !item.duplicateInUpload)
+
+    // Re-check duplicates/existing just before submit (in case user edited IDs in preview)
+    const dbExistingSet = new Set(products.map((p) => normalizeTrackingId(String(p.id))))
+    const counts = new Map<string, number>()
+    bulkItems.forEach((item) => {
+      const key = normalizeTrackingId(item.trackingId)
+      if (!key) return
+      counts.set(key, (counts.get(key) || 0) + 1)
+    })
+
+    const refreshedItems = bulkItems.map((item) => {
+      const key = normalizeTrackingId(item.trackingId)
+      return {
+        ...item,
+        duplicateInUpload: key ? (counts.get(key) || 0) > 1 : false,
+        exists: key ? dbExistingSet.has(key) : false,
+      }
+    })
+
+    setBulkItems(refreshedItems)
+
+    const itemsToSubmit = refreshedItems.filter((item) => item.trackingId && !item.exists && !item.duplicateInUpload)
     if (itemsToSubmit.length === 0) return
     setBulkSubmitting(true)
     setBulkError("")
@@ -265,6 +307,14 @@ function StockContent() {
       setBulkSubmitting(false)
     }
   }
+
+  const bulkExistingCount = bulkItems.filter((item) => item.exists).length
+  const bulkUploadDuplicateCount = bulkItems.filter((item) => item.duplicateInUpload).length
+  const bulkDuplicateCount = bulkItems.filter((item) => item.exists || item.duplicateInUpload).length
+  const bulkReadyToInsertCount = bulkItems.filter((item) => item.trackingId && !item.exists && !item.duplicateInUpload).length
+  const bulkPreviewItems = bulkItems
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !bulkShowOnlyDuplicates || item.exists || item.duplicateInUpload)
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -777,7 +827,23 @@ function StockContent() {
                     {bulkError && <div className="text-sm text-destructive">{bulkError}</div>}
                     {bulkItems.length > 0 ? (
                       <div className="flex flex-col flex-1 min-h-0 gap-2">
-                        <div className="text-sm text-muted-foreground">{t.stock.importPreview} ({bulkItems.length})</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm text-muted-foreground">{t.stock.importPreview} ({bulkItems.length})</div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={bulkShowOnlyDuplicates ? "default" : "outline"}
+                            onClick={() => setBulkShowOnlyDuplicates((prev) => !prev)}
+                          >
+                            {t.stock.filterDuplicates || "Filter duplicates"} ({bulkDuplicateCount})
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="outline">Total extracted: {bulkItems.length}</Badge>
+                          <Badge variant="secondary">Already exists: {bulkExistingCount}</Badge>
+                          <Badge variant="outline">Duplicate in extraction: {bulkUploadDuplicateCount}</Badge>
+                          <Badge variant="default">Ready to insert: {bulkReadyToInsertCount}</Badge>
+                        </div>
                         <div className="flex-1 overflow-auto rounded-md border">
                             <Table>
                             <TableHeader className="sticky top-0 bg-background z-10">
@@ -791,7 +857,7 @@ function StockContent() {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {bulkItems.map((item, index) => (
+                              {bulkPreviewItems.map(({ item, index }) => (
                                 <TableRow key={`${item.trackingId}-${index}`}>
                                   <TableCell className="font-mono text-xs">
                                     <Input
@@ -865,6 +931,13 @@ function StockContent() {
                                   </TableCell>
                                 </TableRow>
                               ))}
+                              {bulkPreviewItems.length === 0 && (
+                                <TableRow>
+                                  <TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">
+                                    {t.stock.importEmpty}
+                                  </TableCell>
+                                </TableRow>
+                              )}
                             </TableBody>
                             </Table>
                         </div>
@@ -1066,9 +1139,8 @@ function StockContent() {
                         <Select
                           value={normalizeStatus(p.status)}
                           onValueChange={(val) => handleStatusChange(p.id, normalizeStatus(val))}
-                          onClick={(e) => e.stopPropagation()}
                         >
-                          <SelectTrigger className="w-[130px] h-8">
+                          <SelectTrigger className="w-[130px] h-8" onClick={(e) => e.stopPropagation()}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
