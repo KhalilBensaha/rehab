@@ -17,21 +17,26 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 export default function TreasurePage() {
   const { t, locale, dir } = useTranslations()
-  const { products, currentUser, setProducts } = useStore()
+  const { currentUser, setProducts } = useStore()
 
   const [filterCompany, setFilterCompany] = useState<string>("all")
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
+  const [showFilters, setShowFilters] = useState(false)
   const [isResetOpen, setIsResetOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   
   // Load companies and workers with their benefit/fee data from Supabase
   const [companies, setCompanies] = useState<Array<{ id: string; name: string; benefit: number }>>([])
   const [workers, setWorkers] = useState<Array<{ id: string; name: string; commission: number }>>([])
+  const [treasureProducts, setTreasureProducts] = useState<Array<any>>([])
 
   useEffect(() => {
     const loadData = async () => {
-      const [{ data: companiesData }, { data: workersData }] = await Promise.all([
+      const [{ data: companiesData }, { data: workersData }, { data: productsData }] = await Promise.all([
         supabase.from("companies").select("id, name, combenef"),
         supabase.from("delivery_workers").select("id, name, product_fee"),
+        supabase.from("products").select("id, client_name, phone, price, status, company_id, delivery_worker_id, created_at"),
       ])
 
       if (companiesData) {
@@ -53,31 +58,57 @@ export default function TreasurePage() {
           }))
         )
       }
+
+      if (productsData) {
+        const companyNameById = new Map<string, string>()
+        companiesData?.forEach((c) => companyNameById.set(String(c.id), c.name))
+
+        setTreasureProducts(
+          productsData.map((prod) => ({
+            id: String(prod.id),
+            clientName: prod.client_name,
+            companyName: prod.company_id ? companyNameById.get(String(prod.company_id)) || String(prod.company_id) : "-",
+            phone: prod.phone,
+            price: Number(prod.price || 0),
+            status: prod.status || "in_stock",
+            workerId: prod.delivery_worker_id ? String(prod.delivery_worker_id) : undefined,
+            created_at: prod.created_at,
+          })),
+        )
+      }
     }
     loadData()
   }, [])
 
-  const delivered = products.filter((p) => p.status === "delivered")
+  const delivered = treasureProducts.filter((p) => p.status === "delivered")
 
   const filteredDelivered = useMemo(() => {
-    if (filterCompany === "all") return delivered
-    return delivered.filter((p) => p.companyName === filterCompany)
-  }, [delivered, filterCompany])
+    return delivered.filter((p) => {
+      const matchesCompany = filterCompany === "all" || p.companyName === filterCompany
+      const createdAt = (p as any).createdAt ? new Date((p as any).createdAt) : null
+      const fromOk = !dateFrom || (createdAt ? createdAt >= new Date(dateFrom) : false)
+      const toOk = !dateTo || (createdAt ? createdAt <= new Date(`${dateTo}T23:59:59`) : false)
+      return matchesCompany && fromOk && toOk
+    })
+  }, [delivered, filterCompany, dateFrom, dateTo])
 
-  const { totalRevenue, totalWorkerFees, totalBenefit } = useMemo(() => {
+  const { totalRevenue, totalWorkerFees, totalBenefit, systemBenefit, companyMoney } = useMemo(() => {
     return filteredDelivered.reduce(
       (acc, p) => {
         const company = companies.find((c) => c.name === p.companyName)
         const worker = workers.find((w) => w.id === p.workerId)
         const companyBenefit = company?.benefit ?? 0
         const workerFee = worker?.commission ?? 0
+        const productRevenue = Number(p.price || 0)
         return {
-          totalRevenue: acc.totalRevenue + companyBenefit,
+          totalRevenue: acc.totalRevenue + productRevenue,
           totalWorkerFees: acc.totalWorkerFees + workerFee,
           totalBenefit: acc.totalBenefit + (companyBenefit - workerFee),
+          systemBenefit: acc.systemBenefit + (productRevenue - workerFee),
+          companyMoney: acc.companyMoney + (productRevenue - companyBenefit),
         }
       },
-      { totalRevenue: 0, totalWorkerFees: 0, totalBenefit: 0 },
+      { totalRevenue: 0, totalWorkerFees: 0, totalBenefit: 0, systemBenefit: 0, companyMoney: 0 },
     )
   }, [companies, filteredDelivered, workers])
 
@@ -87,6 +118,7 @@ export default function TreasurePage() {
         const res = await fetch("/api/treasure/reset", { method: "DELETE" })
         if (res.ok) {
           setProducts([])
+          setTreasureProducts([])
           setIsResetOpen(false)
         } else {
           const body = await res.json().catch(() => ({}))
@@ -202,6 +234,9 @@ export default function TreasurePage() {
             <p className="text-muted-foreground">{t("treasure.subtitle")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setShowFilters((prev) => !prev)}>
+              <Filter className="h-4 w-4 mr-2" /> {t("treasure.filtersButton") || "Filters"}
+            </Button>
             <Button variant="outline" onClick={handlePrint} disabled={filteredDelivered.length === 0}>
               {t("treasure.print")}
             </Button>
@@ -211,7 +246,50 @@ export default function TreasurePage() {
           </div>
         </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {showFilters && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">{t("treasure.printFilter")}</div>
+                <Select value={filterCompany} onValueChange={setFilterCompany}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("treasure.filterAll") || undefined} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("treasure.filterAll")}</SelectItem>
+                    {companies.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">{t("dashboard.dateFrom") || "From"}</div>
+                <input
+                  type="date"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">{t("dashboard.dateTo") || "To"}</div>
+                <input
+                  type="date"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <Card>
           <CardHeader>
             <CardTitle>{t("treasure.cards.delivered")}</CardTitle>
@@ -239,6 +317,20 @@ export default function TreasurePage() {
           </CardHeader>
           <CardContent className="text-3xl font-bold text-green-600">{totalBenefit.toFixed(2)} {t("common.currency")}</CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("treasure.cards.systemBenefit") || "System Benefit"}</CardTitle>
+            <p className="text-xs text-muted-foreground">{t("treasure.cards.systemBenefitHint") || "Revenue - worker fees"}</p>
+          </CardHeader>
+          <CardContent className="text-3xl font-bold text-emerald-600">{systemBenefit.toFixed(2)} {t("common.currency")}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("treasure.cards.companyMoney") || "Company Money"}</CardTitle>
+            <p className="text-xs text-muted-foreground">{t("treasure.cards.companyMoneyHint") || "System benefit - final benefit"}</p>
+          </CardHeader>
+          <CardContent className="text-3xl font-bold text-blue-600">{companyMoney.toFixed(2)} {t("common.currency")}</CardContent>
+        </Card>
       </div>
 
       <Separator />
@@ -246,22 +338,6 @@ export default function TreasurePage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle>{t("treasure.tableTitle")}</CardTitle>
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <Select value={filterCompany} onValueChange={setFilterCompany}>
-              <SelectTrigger className="w-50">
-                <SelectValue placeholder={t("treasure.filterAll") || undefined} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("treasure.filterAll")}</SelectItem>
-                {companies.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>

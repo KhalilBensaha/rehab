@@ -33,6 +33,7 @@ function StockContent() {
   const [filterCompany, setFilterCompany] = useState<string>("all")
   const [search, setSearch] = useState("")
   const [showDuplicates, setShowDuplicates] = useState(false)
+  const [stockGroupFilter, setStockGroupFilter] = useState<"all" | "in_stock" | "others">("all")
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -485,13 +486,26 @@ function StockContent() {
       (p.client_name || "").toLowerCase().includes(search.toLowerCase()) || String(p.id).includes(search)
     const matchesDuplicate = !showDuplicates || duplicateIdSet.has(normalizeId(p.id))
     const matchesStatus = statusFilter === "all" || normalizeStatus(p.status) === statusFilter
+    const normalizedStatus = normalizeStatus(p.status)
+    const matchesStockGroup =
+      stockGroupFilter === "all" ||
+      (stockGroupFilter === "in_stock" ? normalizedStatus === "in_stock" : normalizedStatus !== "in_stock")
     const isAssigned = Boolean(p.delivery_worker_id)
     const matchesAssigned =
       assignedFilter === "all" || (assignedFilter === "yes" ? isAssigned : !isAssigned)
     const createdAt = p.created_at ? new Date(p.created_at) : null
     const fromOk = !dateFrom || (createdAt ? createdAt >= new Date(dateFrom) : false)
     const toOk = !dateTo || (createdAt ? createdAt <= new Date(`${dateTo}T23:59:59`) : false)
-    return matchesCompany && matchesSearch && matchesDuplicate && matchesStatus && matchesAssigned && fromOk && toOk
+    return (
+      matchesCompany &&
+      matchesSearch &&
+      matchesDuplicate &&
+      matchesStatus &&
+      matchesStockGroup &&
+      matchesAssigned &&
+      fromOk &&
+      toOk
+    )
   })
 
   const handleSaveFilter = () => {
@@ -529,6 +543,7 @@ function StockContent() {
     setFilterCompany("all")
     setSearch("")
     setShowDuplicates(false)
+    setStockGroupFilter("all")
     setStatusFilter("all")
     setAssignedFilter("all")
     setDateFrom("")
@@ -994,6 +1009,27 @@ function StockContent() {
               onClick={() => setShowDuplicates((prev) => !prev)}
             >
               {t.stock.filterDuplicates || "Filter duplicates"}
+            </Button>
+            <Button
+              type="button"
+              variant={stockGroupFilter === "in_stock" ? "default" : "outline"}
+              onClick={() => setStockGroupFilter("in_stock")}
+            >
+              {t.stock.status.inStock}
+            </Button>
+            <Button
+              type="button"
+              variant={stockGroupFilter === "others" ? "default" : "outline"}
+              onClick={() => setStockGroupFilter("others")}
+            >
+              {t.stock.otherStatuses || "Other statuses"}
+            </Button>
+            <Button
+              type="button"
+              variant={stockGroupFilter === "all" ? "secondary" : "outline"}
+              onClick={() => setStockGroupFilter("all")}
+            >
+              {t.stock.statusAll || "All statuses"}
             </Button>
             <Button type="button" variant="outline" onClick={handleExportCsv}>
               {t.stock.exportCsv || "Export CSV"}
