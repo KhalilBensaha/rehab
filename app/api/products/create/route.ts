@@ -6,6 +6,13 @@ dns.setDefaultResultOrder('ipv4first')
 import { NextResponse } from 'next/server'
 import { createSupabaseService } from '@/lib/supabaseService'
 
+function normalizeTrackingId(raw: unknown): string {
+  if (raw === null || raw === undefined) return ''
+  return String(raw)
+    .trim()
+    .replace(/\s+/g, '')
+}
+
 export async function POST(req: Request) {
   try {
     const { id, clientName, phone, price, companyId } = await req.json()
@@ -29,13 +36,13 @@ export async function POST(req: Request) {
       company_id: companyId || null,
     }
 
-    const trimmedId = typeof id === 'string' ? id.trim() : ''
-    if (trimmedId) {
-      const { data: existing } = await supabase.from('products').select('id').eq('id', trimmedId).maybeSingle()
+    const normalizedId = normalizeTrackingId(id)
+    if (normalizedId) {
+      const { data: existing } = await supabase.from('products').select('id').eq('id', normalizedId).maybeSingle()
       if (existing?.id) {
         return NextResponse.json({ error: 'duplicate id', code: 'duplicate' }, { status: 409 })
       }
-      payload.id = trimmedId
+      payload.id = normalizedId
     }
 
     const { data, error } = await supabase.from('products').insert(payload).select().single()

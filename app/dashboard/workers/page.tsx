@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { useStore, type ProductStatus } from "@/lib/store"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -15,9 +15,25 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Phone, DollarSign, FileCheck, Package } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Plus, Phone, DollarSign, FileCheck, Package, ChartColumnBig, Archive, Trash2 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { useTranslations } from "@/lib/i18n"
+
+type WorkerAnalyticsArchive = {
+  id: string
+  workerId: string
+  workerName: string
+  deliveredCount: number
+  totalRevenue: number
+  workerBenefit: number
+  netBenefit: number
+  createdAt: string
+  signature: string
+}
+
+const WORKER_ANALYTICS_ARCHIVE_STORAGE_KEY = "worker-analytics-archives-v1"
+const WORKER_ANALYTICS_HIDDEN_STORAGE_KEY = "worker-analytics-hidden-signatures-v1"
 
 export default function WorkersPage() {
   const { t } = useTranslations()
@@ -27,9 +43,14 @@ export default function WorkersPage() {
   const [loading, setLoading] = useState(false)
   const [selectedWorkerForProducts, setSelectedWorkerForProducts] = useState<any | null>(null)
   const [isProductsDialogOpen, setIsProductsDialogOpen] = useState(false)
+  const [selectedWorkerForAnalytics, setSelectedWorkerForAnalytics] = useState<any | null>(null)
+  const [isAnalyticsDialogOpen, setIsAnalyticsDialogOpen] = useState(false)
   const [productToAssign, setProductToAssign] = useState("")
   const [productIdInput, setProductIdInput] = useState("")
   const [assigningProduct, setAssigningProduct] = useState(false)
+  const [analyticsArchives, setAnalyticsArchives] = useState<WorkerAnalyticsArchive[]>([])
+  const [hiddenAnalyticsSignatures, setHiddenAnalyticsSignatures] = useState<Record<string, string>>({})
+  const [companyBenefitByName, setCompanyBenefitByName] = useState<Record<string, number>>({})
 
   const [newWorker, setNewWorker] = useState({
     name: "",
@@ -45,7 +66,79 @@ export default function WorkersPage() {
   const [editProfileFile, setEditProfileFile] = useState<File | null>(null)
   const [editCertificateFile, setEditCertificateFile] = useState<File | null>(null)
 
-  const normalizeStatus = (status: string): ProductStatus => {
+  const workerFeeById = useMemo(() => {
+    const map: Record<string, number> = {}
+    workers.forEach((worker) => {
+      map[String(worker.id)] = Number(worker.product_fee || 0)
+    })
+    return map
+  }, [workers])
+
+  const currentAnalyticsByWorker = useMemo(() => {
+    const map: Record<string, { deliveredCount: number; totalRevenue: number; workerBenefit: number; netBenefit: number }> = {}
+
+    products.forEach((product) => {
+      if (normalizeStatus(product.status) !== "delivered" || !product.workerId) return
+      const workerId = String(product.workerId)
+      const companyBenefit = Number(companyBenefitByName[product.companyName] || 0)
+      const workerFee = Number(workerFeeById[workerId] || 0)
+      const current = map[workerId] || { deliveredCount: 0, totalRevenue: 0, workerBenefit: 0, netBenefit: 0 }
+
+      current.deliveredCount += 1
+      current.totalRevenue += companyBenefit
+      current.workerBenefit += workerFee
+      current.netBenefit += companyBenefit - workerFee
+      map[workerId] = current
+    })
+
+    return map
+  }, [products, companyBenefitByName, workerFeeById])
+
+  const getAnalyticsSignature = (analytics: {
+    deliveredCount: number
+    totalRevenue: number
+    workerBenefit: number
+    netBenefit: number
+  }) =>
+    [
+      analytics.deliveredCount,
+      analytics.totalRevenue.toFixed(2),
+      analytics.workerBenefit.toFixed(2),
+      analytics.netBenefit.toFixed(2),
+    ].join("|")
+
+  useEffect(() => {
+    try {
+      const rawArchives = localStorage.getItem(WORKER_ANALYTICS_ARCHIVE_STORAGE_KEY)
+      const rawHidden = localStorage.getItem(WORKER_ANALYTICS_HIDDEN_STORAGE_KEY)
+
+      if (rawArchives) {
+        const parsed = JSON.parse(rawArchives)
+        if (Array.isArray(parsed)) {
+          setAnalyticsArchives(parsed)
+        }
+      }
+
+      if (rawHidden) {
+        const parsed = JSON.parse(rawHidden)
+        if (parsed && typeof parsed === "object") {
+          setHiddenAnalyticsSignatures(parsed)
+        }
+      }
+    } catch {
+      // ignore invalid local storage payloads
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(WORKER_ANALYTICS_ARCHIVE_STORAGE_KEY, JSON.stringify(analyticsArchives))
+  }, [analyticsArchives])
+
+  useEffect(() => {
+    localStorage.setItem(WORKER_ANALYTICS_HIDDEN_STORAGE_KEY, JSON.stringify(hiddenAnalyticsSignatures))
+  }, [hiddenAnalyticsSignatures])
+
+  function normalizeStatus(status: string): ProductStatus {
     if (status === "in stock") return "in_stock"
     if (status === "in_stock" || status === "delivery" || status === "delivered" || status === "canceled") {
       return status as ProductStatus
@@ -139,7 +232,7 @@ export default function WorkersPage() {
         supabase
           .from("products")
           .select("id, client_name, phone, price, status, company_id, delivery_worker_id"),
-        supabase.from("companies").select("id, name"),
+        supabase.from("companies").select("id, name, combenef"),
       ])
       if (!error && data) {
         setWorkers(data)
@@ -157,7 +250,12 @@ export default function WorkersPage() {
 
       if (productsData) {
         const nameById = new Map<string, string>()
+        const benefitByName: Record<string, number> = {}
         companiesData?.forEach((c) => nameById.set(String(c.id), c.name))
+        companiesData?.forEach((c) => {
+          benefitByName[c.name] = Number(c.combenef || 0)
+        })
+        setCompanyBenefitByName(benefitByName)
 
         setStoreProducts(
           productsData.map((prod) => ({
@@ -286,6 +384,61 @@ export default function WorkersPage() {
     const { error } = await supabase.from("delivery_workers").delete().eq("id", id)
     if (!error) {
       setWorkers((prev) => prev.filter((w) => w.id !== id))
+    }
+  }
+
+  const handleArchiveCurrentAnalytics = (worker: any) => {
+    const workerId = String(worker.id)
+    const analytics = currentAnalyticsByWorker[workerId] || {
+      deliveredCount: 0,
+      totalRevenue: 0,
+      workerBenefit: 0,
+      netBenefit: 0,
+    }
+
+    if (analytics.deliveredCount === 0) {
+      toast({
+        variant: "destructive",
+        title: t("workers.analyticsNoDataTitle"),
+        description: t("workers.analyticsNoDataDesc"),
+      })
+      return
+    }
+
+    const signature = getAnalyticsSignature(analytics)
+    const snapshot: WorkerAnalyticsArchive = {
+      id: crypto.randomUUID(),
+      workerId,
+      workerName: worker.name,
+      deliveredCount: analytics.deliveredCount,
+      totalRevenue: analytics.totalRevenue,
+      workerBenefit: analytics.workerBenefit,
+      netBenefit: analytics.netBenefit,
+      createdAt: new Date().toISOString(),
+      signature,
+    }
+
+    setAnalyticsArchives((prev) => [snapshot, ...prev])
+    setHiddenAnalyticsSignatures((prev) => ({ ...prev, [workerId]: signature }))
+
+    toast({
+      title: t("workers.analyticsArchivedTitle"),
+      description: t("workers.analyticsArchivedDesc"),
+    })
+  }
+
+  const handleDeleteArchive = (archiveId: string) => {
+    const archive = analyticsArchives.find((item) => item.id === archiveId)
+    if (!archive) return
+
+    setAnalyticsArchives((prev) => prev.filter((item) => item.id !== archiveId))
+
+    if (hiddenAnalyticsSignatures[archive.workerId] === archive.signature) {
+      setHiddenAnalyticsSignatures((prev) => {
+        const next = { ...prev }
+        delete next[archive.workerId]
+        return next
+      })
     }
   }
 
@@ -425,6 +578,21 @@ export default function WorkersPage() {
                       {t("workers.assignedProducts")} ({products.filter((p) => p.workerId === String(worker.id)).length})
                     </Button>
                   </div>
+
+                  <div className="mt-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={() => {
+                        setSelectedWorkerForAnalytics(worker)
+                        setIsAnalyticsDialogOpen(true)
+                      }}
+                    >
+                      <ChartColumnBig className="h-4 w-4" />
+                      {t("workers.analytics")}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -534,10 +702,10 @@ export default function WorkersPage() {
           </DialogHeader>
           <div className="mt-4 space-y-4">
             <div className="flex flex-wrap items-end gap-3 rounded-md border p-4">
-              <div className="grid gap-2 min-w-[240px]">
+              <div className="grid gap-2 min-w-60">
                 <Label>{t("workers.assignProduct")}</Label>
                 <Select value={productToAssign} onValueChange={setProductToAssign}>
-                  <SelectTrigger className="min-w-[240px]">
+                  <SelectTrigger className="min-w-60">
                     <SelectValue placeholder={t("workers.assignSelect")} />
                   </SelectTrigger>
                   <SelectContent>
@@ -551,7 +719,7 @@ export default function WorkersPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2 min-w-[240px]">
+              <div className="grid gap-2 min-w-60">
                 <Label htmlFor="assignById">{t("workers.assignById")}</Label>
                 <Input
                   id="assignById"
@@ -659,6 +827,130 @@ export default function WorkersPage() {
               </Table>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isAnalyticsDialogOpen}
+        onOpenChange={(open) => {
+          setIsAnalyticsDialogOpen(open)
+          if (!open) {
+            setSelectedWorkerForAnalytics(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl w-full max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ChartColumnBig className="h-5 w-5" />
+              {t("workers.analyticsTitle", { name: selectedWorkerForAnalytics?.name || "" })}
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedWorkerForAnalytics && (
+            <Tabs defaultValue="current" className="mt-2">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="current">{t("workers.analyticsCurrentTab")}</TabsTrigger>
+                <TabsTrigger value="archive">{t("workers.analyticsArchiveTab")}</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="current" className="space-y-4 pt-4">
+                {(() => {
+                  const workerId = String(selectedWorkerForAnalytics.id)
+                  const analytics = currentAnalyticsByWorker[workerId] || {
+                    deliveredCount: 0,
+                    totalRevenue: 0,
+                    workerBenefit: 0,
+                    netBenefit: 0,
+                  }
+                  const signature = getAnalyticsSignature(analytics)
+                  const isArchived = hiddenAnalyticsSignatures[workerId] === signature
+
+                  if (isArchived) {
+                    return (
+                      <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                        {t("workers.analyticsArchivedHidden")}
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-xs text-muted-foreground">{t("workers.analyticsDeliveredCount")}</p>
+                            <p className="text-2xl font-bold">{analytics.deliveredCount}</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-xs text-muted-foreground">{t("workers.analyticsRevenue")}</p>
+                            <p className="text-2xl font-bold">{analytics.totalRevenue.toFixed(2)} {t("common.currency")}</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-xs text-muted-foreground">{t("workers.analyticsWorkerBenefit")}</p>
+                            <p className="text-2xl font-bold text-orange-600">-{analytics.workerBenefit.toFixed(2)} {t("common.currency")}</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-xs text-muted-foreground">{t("workers.analyticsNetBenefit")}</p>
+                            <p className="text-2xl font-bold text-green-600">{analytics.netBenefit.toFixed(2)} {t("common.currency")}</p>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button type="button" onClick={() => handleArchiveCurrentAnalytics(selectedWorkerForAnalytics)} className="gap-2">
+                          <Archive className="h-4 w-4" />
+                          {t("workers.analyticsArchiveAction")}
+                        </Button>
+                      </div>
+                    </>
+                  )
+                })()}
+              </TabsContent>
+
+              <TabsContent value="archive" className="space-y-3 pt-4">
+                {analyticsArchives
+                  .filter((item) => item.workerId === String(selectedWorkerForAnalytics.id))
+                  .map((item) => (
+                    <Card key={item.id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1 text-sm">
+                            <p className="text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</p>
+                            <p>{t("workers.analyticsDeliveredCount")}: <strong>{item.deliveredCount}</strong></p>
+                            <p>{t("workers.analyticsRevenue")}: <strong>{item.totalRevenue.toFixed(2)} {t("common.currency")}</strong></p>
+                            <p>{t("workers.analyticsWorkerBenefit")}: <strong>-{item.workerBenefit.toFixed(2)} {t("common.currency")}</strong></p>
+                            <p>{t("workers.analyticsNetBenefit")}: <strong>{item.netBenefit.toFixed(2)} {t("common.currency")}</strong></p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => handleDeleteArchive(item.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            {t("workers.analyticsDeleteArchive")}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+
+                {analyticsArchives.filter((item) => item.workerId === String(selectedWorkerForAnalytics.id)).length === 0 && (
+                  <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">
+                    {t("workers.analyticsArchiveEmpty")}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          )}
         </DialogContent>
       </Dialog>
     </DashboardLayout>

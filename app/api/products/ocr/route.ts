@@ -46,6 +46,13 @@ function parsePrice(raw: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function normalizeTrackingId(raw: unknown): string {
+  if (raw === null || raw === undefined) return ''
+  return String(raw)
+    .trim()
+    .replace(/\s+/g, '')
+}
+
 function cleanJsonText(text: string) {
   const noFences = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
   const start = noFences.indexOf('{')
@@ -97,7 +104,7 @@ function normalizeItem(item: any) {
   const price = parsePrice(item?.price)
 
   return {
-    trackingId: String(trackingId).trim(),
+    trackingId: normalizeTrackingId(trackingId),
     clientName: String(clientName).trim(),
     phone: String(phone).trim(),
     price,
@@ -109,6 +116,7 @@ function buildPrompt(companyId: string) {
 
 Rules:
 - trackingId is the tracking number / numero de tracking.
+- Remove every space inside trackingId and trim spaces at the end (example: "AB 12 34 " => "AB1234").
 - clientName is the client name.
 - phone is the telephone.
 - price is numeric in DZD (no currency symbol).
@@ -119,7 +127,7 @@ Rules:
 Return ONLY valid JSON with this format: {"items": [{"trackingId": "", "clientName": "", "phone": "", "price": 0}]}.
 
 Rules:
-- trackingId must be copied exactly from "Numero de tracking" (keep hyphens and ZR suffix).
+- trackingId must be copied from "Numero de tracking" while keeping characters like hyphens and suffixes, but remove all spaces inside it and trim trailing spaces.
 - clientName must be copied exactly from "Client" (keep Arabic letters as-is, do NOT merge names from adjacent rows).
 - phone must be copied from "Telephone" (keep digits and spaces if any).
 - price must be numeric DZD from "Prix" (ignore 'DA' and thousand separators).
