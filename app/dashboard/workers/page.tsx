@@ -27,6 +27,7 @@ type WorkerAnalyticsArchive = {
   deliveredCount: number
   totalRevenue: number
   workerBenefit: number
+  systemBenefit: number
   netBenefit: number
   createdAt: string
   signature: string
@@ -75,18 +76,20 @@ export default function WorkersPage() {
   }, [workers])
 
   const currentAnalyticsByWorker = useMemo(() => {
-    const map: Record<string, { deliveredCount: number; totalRevenue: number; workerBenefit: number; netBenefit: number }> = {}
+    const map: Record<string, { deliveredCount: number; totalRevenue: number; workerBenefit: number; systemBenefit: number; netBenefit: number }> = {}
 
     products.forEach((product) => {
       if (normalizeStatus(product.status) !== "delivered" || !product.workerId) return
       const workerId = String(product.workerId)
+      const productPrice = Number(product.price || 0)
       const companyBenefit = Number(companyBenefitByName[product.companyName] || 0)
       const workerFee = Number(workerFeeById[workerId] || 0)
-      const current = map[workerId] || { deliveredCount: 0, totalRevenue: 0, workerBenefit: 0, netBenefit: 0 }
+      const current = map[workerId] || { deliveredCount: 0, totalRevenue: 0, workerBenefit: 0, systemBenefit: 0, netBenefit: 0 }
 
       current.deliveredCount += 1
-      current.totalRevenue += companyBenefit
+      current.totalRevenue += productPrice
       current.workerBenefit += workerFee
+      current.systemBenefit += productPrice - workerFee
       current.netBenefit += companyBenefit - workerFee
       map[workerId] = current
     })
@@ -98,12 +101,14 @@ export default function WorkersPage() {
     deliveredCount: number
     totalRevenue: number
     workerBenefit: number
+    systemBenefit: number
     netBenefit: number
   }) =>
     [
       analytics.deliveredCount,
       analytics.totalRevenue.toFixed(2),
       analytics.workerBenefit.toFixed(2),
+      analytics.systemBenefit.toFixed(2),
       analytics.netBenefit.toFixed(2),
     ].join("|")
 
@@ -393,6 +398,7 @@ export default function WorkersPage() {
       deliveredCount: 0,
       totalRevenue: 0,
       workerBenefit: 0,
+      systemBenefit: 0,
       netBenefit: 0,
     }
 
@@ -413,6 +419,7 @@ export default function WorkersPage() {
       deliveredCount: analytics.deliveredCount,
       totalRevenue: analytics.totalRevenue,
       workerBenefit: analytics.workerBenefit,
+      systemBenefit: analytics.systemBenefit,
       netBenefit: analytics.netBenefit,
       createdAt: new Date().toISOString(),
       signature,
@@ -861,6 +868,7 @@ export default function WorkersPage() {
                     deliveredCount: 0,
                     totalRevenue: 0,
                     workerBenefit: 0,
+                    systemBenefit: 0,
                     netBenefit: 0,
                   }
                   const signature = getAnalyticsSignature(analytics)
@@ -876,7 +884,7 @@ export default function WorkersPage() {
 
                   return (
                     <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         <Card>
                           <CardContent className="p-4">
                             <p className="text-xs text-muted-foreground">{t("workers.analyticsDeliveredCount")}</p>
@@ -901,6 +909,12 @@ export default function WorkersPage() {
                             <p className="text-2xl font-bold text-green-600">{analytics.netBenefit.toFixed(2)} {t("common.currency")}</p>
                           </CardContent>
                         </Card>
+                        <Card>
+                          <CardContent className="p-4">
+                            <p className="text-xs text-muted-foreground">{t("workers.analyticsSystemBenefit")}</p>
+                            <p className="text-2xl font-bold text-emerald-600">{analytics.systemBenefit.toFixed(2)} {t("common.currency")}</p>
+                          </CardContent>
+                        </Card>
                       </div>
 
                       <div className="flex justify-end">
@@ -922,11 +936,22 @@ export default function WorkersPage() {
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="space-y-1 text-sm">
+                            {(() => {
+                              const systemBenefit =
+                                typeof item.systemBenefit === "number"
+                                  ? item.systemBenefit
+                                  : Number(item.totalRevenue || 0) - Number(item.workerBenefit || 0)
+                              return (
+                                <>
                             <p className="text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</p>
                             <p>{t("workers.analyticsDeliveredCount")}: <strong>{item.deliveredCount}</strong></p>
                             <p>{t("workers.analyticsRevenue")}: <strong>{item.totalRevenue.toFixed(2)} {t("common.currency")}</strong></p>
                             <p>{t("workers.analyticsWorkerBenefit")}: <strong>-{item.workerBenefit.toFixed(2)} {t("common.currency")}</strong></p>
+                            <p>{t("workers.analyticsSystemBenefit")}: <strong>{systemBenefit.toFixed(2)} {t("common.currency")}</strong></p>
                             <p>{t("workers.analyticsNetBenefit")}: <strong>{item.netBenefit.toFixed(2)} {t("common.currency")}</strong></p>
+                                </>
+                              )
+                            })()}
                           </div>
                           <Button
                             type="button"

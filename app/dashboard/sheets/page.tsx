@@ -1,7 +1,7 @@
 "use client"
 
 import { Label } from "@/components/ui/label"
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useMemo, useState, Suspense } from "react"
 import { useStore, type Worker, type ProductStatus } from "@/lib/store"
 import { supabase } from "@/lib/supabaseClient"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -11,11 +11,16 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Search, UserCircle, ExternalLink, ArrowRightLeft } from "lucide-react"
 import { useTranslations } from "@/lib/i18n"
 import { toast } from "@/hooks/use-toast"
+
+type SheetStatusChoice = ProductStatus | "detached"
+
+const DETACHED_HISTORY_STORAGE_KEY = "sheets.detachedHistoryByWorker.v1"
 
 function SheetsContent() {
   const { t, locale, dir } = useTranslations()
@@ -26,11 +31,41 @@ function SheetsContent() {
   const [productIdInput, setProductIdInput] = useState<string>("")
   const [assigning, setAssigning] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [statusDrafts, setStatusDrafts] = useState<Record<string, SheetStatusChoice>>({})
+  const [validating, setValidating] = useState(false)
+  const [sheetTab, setSheetTab] = useState<"delivery" | "history">("delivery")
+  const [detachedHistoryByWorker, setDetachedHistoryByWorker] = useState<Record<string, string[]>>({})
 
   const workerProducts = selectedWorker ? products.filter((p) => p.workerId === selectedWorker.id) : []
-  const allSelected = workerProducts.length > 0 && selectedIds.size === workerProducts.length
+  const deliveryProducts = workerProducts.filter((p) => normalizeStatus(p.status) === "delivery")
+  const detachedHistoryProducts = useMemo(() => {
+    if (!selectedWorker) return []
+    const ids = detachedHistoryByWorker[selectedWorker.id] || []
+    return ids
+      .map((id) => products.find((p) => p.id === id))
+      .filter((p): p is (typeof products)[number] => Boolean(p))
+  }, [selectedWorker, detachedHistoryByWorker, products])
+  const historyProducts = useMemo(() => {
+    const list = workerProducts.filter((p) => {
+      const status = normalizeStatus(p.status)
+      return status === "delivered" || status === "canceled"
+    })
+    const byId = new Map<string, (typeof products)[number]>()
+    list.forEach((p) => byId.set(p.id, p))
+    detachedHistoryProducts.forEach((p) => byId.set(p.id, p))
+    return Array.from(byId.values())
+  }, [workerProducts, detachedHistoryProducts])
+  const allSelected = deliveryProducts.length > 0 && selectedIds.size === deliveryProducts.length
 
-  const normalizeStatus = (status: string) => (status === "in stock" ? "in_stock" : status)
+  function normalizeStatus(status: string) {
+    return status === "in stock" ? "in_stock" : status
+  }
+  const getEffectiveStatus = (product: (typeof products)[number]): SheetStatusChoice => {
+    const drafted = statusDrafts[product.id]
+    if (drafted) return drafted
+    if (!selectedWorker || product.workerId !== selectedWorker.id) return "detached"
+    return normalizeStatus(product.status) as ProductStatus
+  }
   const statusLabel = (status: string) => {
     const normalized = normalizeStatus(status)
     if (normalized === "in_stock") return t("stock.status.inStock")
@@ -92,7 +127,28 @@ function SheetsContent() {
 
   useEffect(() => {
     setSelectedIds(new Set())
+    setStatusDrafts({})
+    setSheetTab("delivery")
   }, [selectedWorker?.id])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const raw = window.localStorage.getItem(DETACHED_HISTORY_STORAGE_KEY)
+    if (!raw) return
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === "object") {
+        setDetachedHistoryByWorker(parsed)
+      }
+    } catch {
+      // ignore invalid value
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    window.localStorage.setItem(DETACHED_HISTORY_STORAGE_KEY, JSON.stringify(detachedHistoryByWorker))
+  }, [detachedHistoryByWorker])
 
   const handleAssign = async (explicitId?: string) => {
     const productId = (explicitId || productToAssign).trim()
@@ -155,7 +211,7 @@ function SheetsContent() {
       setSelectedIds(new Set())
       return
     }
-    const next = new Set(workerProducts.map((p) => p.id))
+    const next = new Set(deliveryProducts.map((p) => p.id))
     setSelectedIds(next)
   }
 
@@ -173,7 +229,8 @@ function SheetsContent() {
 
   const handlePrint = (mode: "selected" | "all") => {
     if (!selectedWorker) return
-    const items = mode === "all" ? workerProducts : workerProducts.filter((p) => selectedIds.has(p.id))
+    const baseItems = sheetTab === "history" ? historyProducts : deliveryProducts
+    const items = mode === "all" ? baseItems : baseItems.filter((p) => selectedIds.has(p.id))
     if (items.length === 0) {
       toast({
         variant: "destructive",
@@ -252,6 +309,58 @@ function SheetsContent() {
     }, 300)
   }
 
+  const handleValidateSheet = async () => {
+    if (!selectedWorker || Object.keys(statusDrafts).length === 0) return
+    setValidating(true)
+    const detachedIds: string[] = []
+
+    try {
+      for (const [productId, nextStatus] of Object.entries(statusDrafts)) {
+        if (nextStatus === "detached") {
+          await supabase.from("products").update({ delivery_worker_id: null, status: "in_stock" }).eq("id", productId)
+          detachProduct(productId)
+          detachedIds.push(productId)
+          continue
+        }
+
+        const payload: Record<string, any> = { status: nextStatus }
+        if (nextStatus === "delivered") {
+          payload.delivered_at = new Date().toISOString()
+        }
+
+        await supabase.from("products").update(payload).eq("id", productId)
+        updateProductStatus(productId, nextStatus)
+      }
+
+      if (detachedIds.length > 0) {
+        setDetachedHistoryByWorker((prev) => {
+          const previous = prev[selectedWorker.id] || []
+          return {
+            ...prev,
+            [selectedWorker.id]: Array.from(new Set([...detachedIds, ...previous])),
+          }
+        })
+      }
+
+      setStatusDrafts({})
+      setSelectedIds(new Set())
+      setSheetTab("delivery")
+
+      toast({
+        title: t("sheets.validateSuccessTitle") || "Sheet validated",
+        description: t("sheets.validateSuccessDesc") || "Statuses were updated successfully.",
+      })
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: t("workers.toastUpdateFailedTitle"),
+        description: err?.message || t("workers.toastUpdateFailedDesc"),
+      })
+    } finally {
+      setValidating(false)
+    }
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -319,82 +428,131 @@ function SheetsContent() {
                     <Button onClick={() => setIsAssignOpen(true)} className="gap-2">
                       <ArrowRightLeft className="h-4 w-4" /> {t("sheets.affect")}
                     </Button>
+                    <Button
+                      variant="default"
+                      disabled={Object.keys(statusDrafts).length === 0 || validating}
+                      onClick={handleValidateSheet}
+                    >
+                      {validating ? t("common.loading") : t("sheets.validateResults") || "Validate results"}
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[40px]">
-                          <Checkbox
-                            checked={allSelected}
-                            onCheckedChange={(checked) => toggleSelectAll(Boolean(checked))}
-                            aria-label={t("sheets.selectAll")}
-                          />
-                        </TableHead>
-                        <TableHead>{t("sheets.table.id")}</TableHead>
-                        <TableHead>{t("sheets.table.client")}</TableHead>
-                        <TableHead>{t("sheets.table.company")}</TableHead>
-                        <TableHead>{t("sheets.table.price")}</TableHead>
-                        <TableHead>{t("sheets.table.status")}</TableHead>
-                        <TableHead className="text-right">{t("sheets.table.action")}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {workerProducts.map((p) => (
-                        <TableRow key={p.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedIds.has(p.id)}
-                              onCheckedChange={(checked) => toggleRow(p.id, Boolean(checked))}
-                              aria-label={p.id}
-                            />
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{p.id}</TableCell>
-                          <TableCell>{p.clientName}</TableCell>
-                          <TableCell>{p.companyName}</TableCell>
-                          <TableCell>{p.price.toFixed(2)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="capitalize">
-                              {statusLabel(p.status)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {normalizeStatus(p.status) === "delivered" ? (
-                              <Badge variant="secondary" className="bg-green-100 text-green-800">
-                                ✓ {t("stock.status.delivered")}
-                              </Badge>
-                            ) : (
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => handleMarkDelivered(p.id)}
-                                >
-                                  {t("stock.status.delivered")}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive"
-                                  onClick={() => handleDetach(p.id)}
-                                >
-                                  {t("sheets.detach")}
-                                </Button>
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {workerProducts.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
-                            {t("sheets.noAssignments")}
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                  <Tabs value={sheetTab} onValueChange={(v) => setSheetTab(v as "delivery" | "history")}>
+                    <TabsList className="mb-4 grid grid-cols-2 w-full">
+                      <TabsTrigger value="delivery">{t("sheets.inDeliveryTab") || "In delivery"}</TabsTrigger>
+                      <TabsTrigger value="history">{t("sheets.historyTab") || "Validated history"}</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="delivery">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox
+                                checked={allSelected}
+                                onCheckedChange={(checked) => toggleSelectAll(Boolean(checked))}
+                                aria-label={t("sheets.selectAll")}
+                              />
+                            </TableHead>
+                            <TableHead>{t("sheets.table.id")}</TableHead>
+                            <TableHead>{t("sheets.table.client")}</TableHead>
+                            <TableHead>{t("sheets.table.company")}</TableHead>
+                            <TableHead>{t("sheets.table.price")}</TableHead>
+                            <TableHead>{t("sheets.table.status")}</TableHead>
+                            <TableHead className="text-right">{t("sheets.table.action")}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {deliveryProducts.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedIds.has(p.id)}
+                                  onCheckedChange={(checked) => toggleRow(p.id, Boolean(checked))}
+                                  aria-label={p.id}
+                                />
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                              <TableCell>{p.clientName}</TableCell>
+                              <TableCell>{p.companyName}</TableCell>
+                              <TableCell>{p.price.toFixed(2)}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="capitalize">
+                                  {statusLabel(getEffectiveStatus(p))}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end">
+                                  <Select
+                                    value={getEffectiveStatus(p)}
+                                    onValueChange={(value) =>
+                                      setStatusDrafts((prev) => ({ ...prev, [p.id]: value as SheetStatusChoice }))
+                                    }
+                                  >
+                                    <SelectTrigger className="w-37.5 h-8">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="delivery">{t("stock.status.delivery")}</SelectItem>
+                                      <SelectItem value="delivered">{t("stock.status.delivered")}</SelectItem>
+                                      <SelectItem value="canceled">{t("stock.status.canceled")}</SelectItem>
+                                      <SelectItem value="detached">{t("sheets.detachedStatus") || "Detached"}</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {deliveryProducts.length === 0 && (
+                            <TableRow>
+                              <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                                {t("sheets.noDeliveryProducts") || "No in-delivery products."}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TabsContent>
+
+                    <TabsContent value="history">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{t("sheets.table.id")}</TableHead>
+                            <TableHead>{t("sheets.table.client")}</TableHead>
+                            <TableHead>{t("sheets.table.company")}</TableHead>
+                            <TableHead>{t("sheets.table.price")}</TableHead>
+                            <TableHead>{t("sheets.table.status")}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {historyProducts.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                              <TableCell>{p.clientName}</TableCell>
+                              <TableCell>{p.companyName}</TableCell>
+                              <TableCell>{p.price.toFixed(2)}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary" className="capitalize">
+                                  {p.workerId === selectedWorker.id
+                                    ? statusLabel(normalizeStatus(p.status))
+                                    : t("sheets.detachedStatus") || "Detached"}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {historyProducts.length === 0 && (
+                            <TableRow>
+                              <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                                {t("sheets.noHistoryProducts") || "No validated history yet."}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TabsContent>
+                  </Tabs>
                 </CardContent>
               </Card>
             ) : (
