@@ -19,6 +19,13 @@ function parsePrice(raw: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function normalizeTrackingId(raw: unknown): string {
+  if (raw === null || raw === undefined) return ''
+  return String(raw)
+    .trim()
+    .replace(/\s+/g, '')
+}
+
 export async function POST(req: Request) {
   try {
     const { items, companyId } = await req.json()
@@ -29,7 +36,10 @@ export async function POST(req: Request) {
 
     const cleaned = items
       .map((item) => ({
-        id: typeof item?.trackingId === 'string' ? item.trackingId.trim() : String(item?.id || '').trim(),
+        id:
+          typeof item?.trackingId === 'string'
+            ? normalizeTrackingId(item.trackingId)
+            : normalizeTrackingId(item?.id || ''),
         clientName: typeof item?.clientName === 'string' ? item.clientName.trim() : '',
         phone: typeof item?.phone === 'string' ? item.phone.trim() : '',
         price: parsePrice(item?.price),
