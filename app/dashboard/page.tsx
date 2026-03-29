@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabaseClient"
 import { useTranslations } from "@/lib/i18n"
@@ -10,7 +10,10 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Package, Truck, Building2, Users } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Package, Truck, Building2, Users, Search, Copy } from "lucide-react"
 
 export default function OverviewPage() {
   const router = useRouter()
@@ -22,6 +25,8 @@ export default function OverviewPage() {
   const [admins, setAdmins] = useState<any[]>([])
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+  const [phoneSearch, setPhoneSearch] = useState("")
+  const [showDuplicates, setShowDuplicates] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -61,6 +66,40 @@ export default function OverviewPage() {
   const deliveredInRange = rangeProducts.filter((p) => p.status === "delivered")
   const inDeliveryInRange = rangeProducts.filter((p) => p.status === "delivery")
   const revenueInRange = deliveredInRange.reduce((acc, p) => acc + Number(p.price || 0), 0)
+
+  // Phone duplicate detection
+  const phoneCountMap = useMemo(() => {
+    const map: Record<string, number> = {}
+    products.forEach((p) => {
+      const phone = (p.phone || "").trim()
+      if (!phone) return
+      map[phone] = (map[phone] || 0) + 1
+    })
+    return map
+  }, [products])
+
+  const duplicatePhones = useMemo(() => {
+    const set = new Set<string>()
+    Object.entries(phoneCountMap).forEach(([phone, count]) => {
+      if (count > 1) set.add(phone)
+    })
+    return set
+  }, [phoneCountMap])
+
+  const phoneSearchResults = useMemo(() => {
+    const trimmed = phoneSearch.trim()
+    if (!trimmed && !showDuplicates) return []
+    return products.filter((p) => {
+      const phone = (p.phone || "").trim()
+      if (!phone) return false
+      const matchesSearch = trimmed ? phone.includes(trimmed) : true
+      const matchesDuplicate = showDuplicates ? duplicatePhones.has(phone) : true
+      // When both active, show intersection; when only one, just that filter
+      if (trimmed && showDuplicates) return matchesSearch && matchesDuplicate
+      if (trimmed) return matchesSearch
+      return matchesDuplicate
+    })
+  }, [products, phoneSearch, showDuplicates, duplicatePhones])
 
   const kpis = [
     {
@@ -150,6 +189,76 @@ export default function OverviewPage() {
             </Card>
           ))}
         </div>
+
+        {/* Phone Search & Duplicates */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              {t("dashboard.phoneSearch")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <Input
+                  placeholder={t("dashboard.phoneSearchPlaceholder")}
+                  value={phoneSearch}
+                  onChange={(e) => setPhoneSearch(e.target.value)}
+                />
+              </div>
+              <Button
+                variant={showDuplicates ? "default" : "outline"}
+                className="gap-2"
+                onClick={() => setShowDuplicates((prev) => !prev)}
+              >
+                <Copy className="h-4 w-4" />
+                {t("dashboard.showDuplicates")}
+                {duplicatePhones.size > 0 && (
+                  <Badge variant="secondary" className="ml-1">{duplicatePhones.size}</Badge>
+                )}
+              </Button>
+            </div>
+
+            {phoneSearchResults.length > 0 && (
+              <div className="rounded-md border overflow-auto max-h-96">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("dashboard.phoneTableId")}</TableHead>
+                      <TableHead>{t("dashboard.phoneTableClient")}</TableHead>
+                      <TableHead>{t("dashboard.phoneTablePhone")}</TableHead>
+                      <TableHead>{t("dashboard.phoneTablePrice")}</TableHead>
+                      <TableHead>{t("dashboard.phoneTableStatus")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {phoneSearchResults.map((p) => (
+                      <TableRow key={p.id} className={duplicatePhones.has((p.phone || "").trim()) ? "bg-amber-50 dark:bg-amber-950/30" : ""}>
+                        <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                        <TableCell>{p.client_name || "-"}</TableCell>
+                        <TableCell>
+                          {p.phone || "-"}
+                          {duplicatePhones.has((p.phone || "").trim()) && (
+                            <Badge variant="outline" className="ml-2 text-amber-600 border-amber-400">{t("dashboard.duplicate")}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{Number(p.price || 0).toFixed(2)} {t("common.currency")}</TableCell>
+                        <TableCell>
+                          <Badge variant={p.status === "delivered" ? "default" : "secondary"}>{p.status}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {(phoneSearch.trim() || showDuplicates) && phoneSearchResults.length === 0 && (
+              <p className="text-sm text-center py-6 text-muted-foreground">{t("dashboard.phoneSearchEmpty")}</p>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <Card>

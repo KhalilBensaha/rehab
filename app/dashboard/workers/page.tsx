@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { addTimelineEvent } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -185,7 +186,10 @@ export default function WorkersPage() {
   }
 
   const handleMarkStatus = async (productId: string, status: ProductStatus) => {
+    const prev = products.find((p) => p.id === productId)
+    const oldStatus = prev ? normalizeStatus(prev.status) : "in_stock"
     updateProductStatus(productId, status)
+    addTimelineEvent(productId, oldStatus, status, "worker")
     
     const updateData: Record<string, any> = { status }
     
@@ -237,6 +241,7 @@ export default function WorkersPage() {
           : p,
       )
       setStoreProducts(updated)
+      addTimelineEvent(productId, product.status, "delivery", "worker")
       setProductToAssign("")
       setProductIdInput("")
     } catch (err: any) {

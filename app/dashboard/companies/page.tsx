@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { isSuperRole } from "@/lib/utils"
 import { useTranslations } from "@/lib/i18n"
@@ -12,14 +12,16 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Building2, Trash2, Plus, TrendingUp } from "lucide-react"
+import { Building2, Trash2, Plus, TrendingUp, Package, Truck, DollarSign, BarChart3 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 export default function CompaniesPage() {
   const { t } = useTranslations()
   const [companies, setCompanies] = useState<any[]>([])
+  const [products, setProducts] = useState<any[]>([])
   const [currentRole, setCurrentRole] = useState<string | undefined>(undefined)
   const [isAddOpen, setIsAddOpen] = useState(false)
+  const [expandedAnalytics, setExpandedAnalytics] = useState<Record<string, boolean>>({})
 
   const [newCompany, setNewCompany] = useState({
     name: "",
@@ -30,10 +32,14 @@ export default function CompaniesPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: companiesData } = await supabase.from("companies").select("id, name, combenef, created_at")
+      const [{ data: companiesData }, { data: productsData }, { data: userData }] = await Promise.all([
+        supabase.from("companies").select("id, name, combenef, created_at"),
+        supabase.from("products").select("id, price, status, company_id"),
+        supabase.auth.getUser(),
+      ])
       if (companiesData) setCompanies(companiesData)
+      if (productsData) setProducts(productsData)
 
-      const { data: userData } = await supabase.auth.getUser()
       const { data: profileData } = await supabase
         .from("profiles")
         .select("role")
@@ -43,6 +49,27 @@ export default function CompaniesPage() {
     }
     load()
   }, [])
+
+  const analyticsByCompany = useMemo(() => {
+    const map: Record<string, { total: number; delivered: number; inDelivery: number; canceled: number; revenue: number }> = {}
+    products.forEach((p) => {
+      const cid = String(p.company_id || "")
+      if (!cid) return
+      if (!map[cid]) map[cid] = { total: 0, delivered: 0, inDelivery: 0, canceled: 0, revenue: 0 }
+      const entry = map[cid]
+      entry.total += 1
+      const status = p.status === "in stock" ? "in_stock" : p.status
+      if (status === "delivered") {
+        entry.delivered += 1
+        entry.revenue += Number(p.price || 0)
+      } else if (status === "delivery") {
+        entry.inDelivery += 1
+      } else if (status === "canceled") {
+        entry.canceled += 1
+      }
+    })
+    return map
+  }, [products])
 
   if (!isSuperRole(currentRole)) {
     return (
@@ -170,21 +197,37 @@ export default function CompaniesPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {companies.map((company) => (
+          {companies.map((company) => {
+            const stats = analyticsByCompany[String(company.id)] || { total: 0, delivered: 0, inDelivery: 0, canceled: 0, revenue: 0 }
+            const avgPrice = stats.delivered > 0 ? stats.revenue / stats.delivered : 0
+            const deliveredRatio = stats.total > 0 ? ((stats.delivered / stats.total) * 100).toFixed(1) : "0.0"
+            const isExpanded = expandedAnalytics[String(company.id)]
+
+            return (
             <Card key={company.id}>
               <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
                 <CardTitle className="text-sm font-medium">
                   <Building2 className="h-4 w-4 inline mr-2 text-primary" />
                   {company.name}
                 </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive"
-                  onClick={() => handleRemove(company.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setExpandedAnalytics((prev) => ({ ...prev, [String(company.id)]: !prev[String(company.id)] }))}
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive"
+                    onClick={() => handleRemove(company.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{Number(company.combenef || 0).toFixed(2)} {t("common.currency")}</div>
@@ -192,6 +235,65 @@ export default function CompaniesPage() {
                   <TrendingUp className="h-3 w-3 text-green-500" />
                   {t("companies.benefitHelp")}
                 </p>
+
+                {isExpanded && (
+                  <div className="mt-4 pt-4 border-t space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Package className="h-4 w-4 text-blue-500" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{t("companies.analyticsTotal")}</p>
+                          <p className="font-semibold">{stats.total}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Truck className="h-4 w-4 text-green-500" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{t("companies.analyticsDelivered")}</p>
+                          <p className="font-semibold">{stats.delivered}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Truck className="h-4 w-4 text-amber-500" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{t("companies.analyticsInDelivery")}</p>
+                          <p className="font-semibold">{stats.inDelivery}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Package className="h-4 w-4 text-red-500" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{t("companies.analyticsCanceled")}</p>
+                          <p className="font-semibold">{stats.canceled}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2 pt-2 border-t">
+                      <div className="flex items-center gap-2 text-sm">
+                        <DollarSign className="h-4 w-4 text-emerald-600" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{t("companies.analyticsRevenue")}</p>
+                          <p className="font-semibold">{stats.revenue.toFixed(2)} {t("common.currency")}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <DollarSign className="h-4 w-4 text-blue-600" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{t("companies.analyticsAvgPrice")}</p>
+                          <p className="font-semibold">{avgPrice.toFixed(2)} {t("common.currency")}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <TrendingUp className="h-4 w-4 text-green-600" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{t("companies.analyticsDeliveredRatio")}</p>
+                          <p className="font-semibold">{deliveredRatio}%</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-4 pt-4 border-t">
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">{t("companies.companyId")}</span>
@@ -200,7 +302,8 @@ export default function CompaniesPage() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            )
+          })}
         </div>
       </div>
     </DashboardLayout>

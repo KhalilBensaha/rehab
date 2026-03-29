@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, Suspense } from "react"
 import { useStore, type Worker, type ProductStatus } from "@/lib/store"
 import { supabase } from "@/lib/supabaseClient"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { addTimelineEvent } from "@/lib/utils"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -187,12 +188,17 @@ function SheetsContent() {
   }
 
   const handleDetach = async (productId: string) => {
+    const prev = products.find((p) => p.id === productId)
+    const oldStatus = prev ? normalizeStatus(prev.status) : "delivery"
     const newStatus: ProductStatus = "in_stock"
     await supabase.from("products").update({ delivery_worker_id: null, status: newStatus }).eq("id", productId)
     detachProduct(productId)
+    addTimelineEvent(productId, oldStatus, newStatus, "sheets")
   }
 
   const handleMarkDelivered = async (productId: string) => {
+    const prev = products.find((p) => p.id === productId)
+    const oldStatus = prev ? normalizeStatus(prev.status) : "delivery"
     const deliveredAt = new Date().toISOString()
     await supabase
       .from("products")
@@ -200,6 +206,7 @@ function SheetsContent() {
       .eq("id", productId)
 
     updateProductStatus(productId, "delivered")
+    addTimelineEvent(productId, oldStatus, "delivered", "sheets")
     toast({
       title: t("workers.toastDeliveredTitle"),
       description: t("workers.toastDeliveredDesc"),
@@ -316,9 +323,13 @@ function SheetsContent() {
 
     try {
       for (const [productId, nextStatus] of Object.entries(statusDrafts)) {
+        const prev = products.find((p) => p.id === productId)
+        const oldStatus = prev ? normalizeStatus(prev.status) : "delivery"
+
         if (nextStatus === "detached") {
           await supabase.from("products").update({ delivery_worker_id: null, status: "in_stock" }).eq("id", productId)
           detachProduct(productId)
+          addTimelineEvent(productId, oldStatus, "in_stock", "sheets")
           detachedIds.push(productId)
           continue
         }
@@ -330,6 +341,7 @@ function SheetsContent() {
 
         await supabase.from("products").update(payload).eq("id", productId)
         updateProductStatus(productId, nextStatus)
+        addTimelineEvent(productId, oldStatus, nextStatus, "sheets")
       }
 
       if (detachedIds.length > 0) {
