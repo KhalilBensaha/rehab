@@ -338,9 +338,16 @@ function SheetsContent() {
         if (nextStatus === "delivered") {
           payload.delivered_at = new Date().toISOString()
         }
+        if (nextStatus === "in_stock") {
+          payload.delivery_worker_id = null
+        }
 
         await supabase.from("products").update(payload).eq("id", productId)
-        updateProductStatus(productId, nextStatus)
+        if (nextStatus === "in_stock") {
+          detachProduct(productId)
+        } else {
+          updateProductStatus(productId, nextStatus)
+        }
         addTimelineEvent(productId, oldStatus, nextStatus, "sheets")
       }
 
@@ -507,6 +514,7 @@ function SheetsContent() {
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="delivery">{t("stock.status.delivery")}</SelectItem>
+                                      <SelectItem value="in_stock">{t("stock.status.inStock")}</SelectItem>
                                       <SelectItem value="delivered">{t("stock.status.delivered")}</SelectItem>
                                       <SelectItem value="canceled">{t("stock.status.canceled")}</SelectItem>
                                       <SelectItem value="detached">{t("sheets.detachedStatus") || "Detached"}</SelectItem>
