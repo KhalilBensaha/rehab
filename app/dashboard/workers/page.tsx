@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Phone, DollarSign, FileCheck, Package, ChartColumnBig, Archive, Trash2 } from "lucide-react"
+import { Plus, Phone, DollarSign, FileCheck, Package, ChartColumnBig, Archive, Trash2, Undo2 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { useTranslations } from "@/lib/i18n"
 
@@ -31,10 +31,11 @@ type WorkerAnalyticsArchive = {
   netBenefit: number
   createdAt: string
   signature: string
+  productIds?: string[]
 }
 
 const WORKER_ANALYTICS_ARCHIVE_STORAGE_KEY = "worker-analytics-archives-v1"
-const WORKER_ANALYTICS_HIDDEN_STORAGE_KEY = "worker-analytics-hidden-signatures-v1"
+const WORKER_DISMISSED_PRODUCTS_STORAGE_KEY = "worker-dismissed-product-ids-v1"
 
 export default function WorkersPage() {
   const { t } = useTranslations()
@@ -50,7 +51,7 @@ export default function WorkersPage() {
   const [productIdInput, setProductIdInput] = useState("")
   const [assigningProduct, setAssigningProduct] = useState(false)
   const [analyticsArchives, setAnalyticsArchives] = useState<WorkerAnalyticsArchive[]>([])
-  const [hiddenAnalyticsSignatures, setHiddenAnalyticsSignatures] = useState<Record<string, string>>({})
+  const [dismissedProductIds, setDismissedProductIds] = useState<Record<string, string[]>>({})
   const [companyBenefitByName, setCompanyBenefitByName] = useState<Record<string, number>>({})
 
   const [newWorker, setNewWorker] = useState({
@@ -75,27 +76,51 @@ export default function WorkersPage() {
     return map
   }, [workers])
 
+  // Collect all product IDs that should be excluded from current analytics:
+  // 1. Product IDs in existing archives
+  // 2. Product IDs that were permanently dismissed (deleted archives)
+  const excludedProductIdsByWorker = useMemo(() => {
+    const map: Record<string, Set<string>> = {}
+    // From active archives
+    analyticsArchives.forEach((archive) => {
+      if (!archive.productIds) return
+      if (!map[archive.workerId]) map[archive.workerId] = new Set()
+      archive.productIds.forEach((pid) => map[archive.workerId].add(pid))
+    })
+    // From dismissed (deleted) archives
+    Object.entries(dismissedProductIds).forEach(([workerId, pids]) => {
+      if (!map[workerId]) map[workerId] = new Set()
+      pids.forEach((pid) => map[workerId].add(pid))
+    })
+    return map
+  }, [analyticsArchives, dismissedProductIds])
+
   const currentAnalyticsByWorker = useMemo(() => {
-    const map: Record<string, { deliveredCount: number; totalRevenue: number; workerBenefit: number; systemBenefit: number; netBenefit: number }> = {}
+    const map: Record<string, { deliveredCount: number; totalRevenue: number; workerBenefit: number; systemBenefit: number; netBenefit: number; productIds: string[] }> = {}
 
     products.forEach((product) => {
       if (normalizeStatus(product.status) !== "delivered" || !product.workerId) return
       const workerId = String(product.workerId)
+      // Skip products that were already counted in a previous archive or dismissed
+      const excludedIds = excludedProductIdsByWorker[workerId]
+      if (excludedIds && excludedIds.has(product.id)) return
+
       const productPrice = Number(product.price || 0)
       const companyBenefit = Number(companyBenefitByName[product.companyName] || 0)
       const workerFee = Number(workerFeeById[workerId] || 0)
-      const current = map[workerId] || { deliveredCount: 0, totalRevenue: 0, workerBenefit: 0, systemBenefit: 0, netBenefit: 0 }
+      const current = map[workerId] || { deliveredCount: 0, totalRevenue: 0, workerBenefit: 0, systemBenefit: 0, netBenefit: 0, productIds: [] }
 
       current.deliveredCount += 1
       current.totalRevenue += productPrice
       current.workerBenefit += workerFee
       current.systemBenefit += productPrice - workerFee
       current.netBenefit += companyBenefit - workerFee
+      current.productIds.push(product.id)
       map[workerId] = current
     })
 
     return map
-  }, [products, companyBenefitByName, workerFeeById])
+  }, [products, companyBenefitByName, workerFeeById, excludedProductIdsByWorker])
 
   const getAnalyticsSignature = (analytics: {
     deliveredCount: number
@@ -115,7 +140,7 @@ export default function WorkersPage() {
   useEffect(() => {
     try {
       const rawArchives = localStorage.getItem(WORKER_ANALYTICS_ARCHIVE_STORAGE_KEY)
-      const rawHidden = localStorage.getItem(WORKER_ANALYTICS_HIDDEN_STORAGE_KEY)
+      const rawDismissed = localStorage.getItem(WORKER_DISMISSED_PRODUCTS_STORAGE_KEY)
 
       if (rawArchives) {
         const parsed = JSON.parse(rawArchives)
@@ -123,11 +148,10 @@ export default function WorkersPage() {
           setAnalyticsArchives(parsed)
         }
       }
-
-      if (rawHidden) {
-        const parsed = JSON.parse(rawHidden)
+      if (rawDismissed) {
+        const parsed = JSON.parse(rawDismissed)
         if (parsed && typeof parsed === "object") {
-          setHiddenAnalyticsSignatures(parsed)
+          setDismissedProductIds(parsed)
         }
       }
     } catch {
@@ -140,8 +164,8 @@ export default function WorkersPage() {
   }, [analyticsArchives])
 
   useEffect(() => {
-    localStorage.setItem(WORKER_ANALYTICS_HIDDEN_STORAGE_KEY, JSON.stringify(hiddenAnalyticsSignatures))
-  }, [hiddenAnalyticsSignatures])
+    localStorage.setItem(WORKER_DISMISSED_PRODUCTS_STORAGE_KEY, JSON.stringify(dismissedProductIds))
+  }, [dismissedProductIds])
 
   function normalizeStatus(status: string): ProductStatus {
     if (status === "in stock") return "in_stock"
@@ -400,6 +424,7 @@ export default function WorkersPage() {
       workerBenefit: 0,
       systemBenefit: 0,
       netBenefit: 0,
+      productIds: [],
     }
 
     if (analytics.deliveredCount === 0) {
@@ -423,10 +448,10 @@ export default function WorkersPage() {
       netBenefit: analytics.netBenefit,
       createdAt: new Date().toISOString(),
       signature,
+      productIds: analytics.productIds,
     }
 
     setAnalyticsArchives((prev) => [snapshot, ...prev])
-    setHiddenAnalyticsSignatures((prev) => ({ ...prev, [workerId]: signature }))
 
     toast({
       title: t("workers.analyticsArchivedTitle"),
@@ -436,17 +461,19 @@ export default function WorkersPage() {
 
   const handleDeleteArchive = (archiveId: string) => {
     const archive = analyticsArchives.find((item) => item.id === archiveId)
-    if (!archive) return
-
-    setAnalyticsArchives((prev) => prev.filter((item) => item.id !== archiveId))
-
-    if (hiddenAnalyticsSignatures[archive.workerId] === archive.signature) {
-      setHiddenAnalyticsSignatures((prev) => {
-        const next = { ...prev }
-        delete next[archive.workerId]
-        return next
-      })
+    if (archive?.productIds?.length) {
+      // Move product IDs to dismissed so they never reappear in current
+      setDismissedProductIds((prev) => ({
+        ...prev,
+        [archive.workerId]: [...(prev[archive.workerId] || []), ...archive.productIds!],
+      }))
     }
+    setAnalyticsArchives((prev) => prev.filter((item) => item.id !== archiveId))
+  }
+
+  const handleUndoArchive = (archiveId: string) => {
+    // Remove the archive without dismissing — products return to current tab
+    setAnalyticsArchives((prev) => prev.filter((item) => item.id !== archiveId))
   }
 
   return (
@@ -870,16 +897,7 @@ export default function WorkersPage() {
                     workerBenefit: 0,
                     systemBenefit: 0,
                     netBenefit: 0,
-                  }
-                  const signature = getAnalyticsSignature(analytics)
-                  const isArchived = hiddenAnalyticsSignatures[workerId] === signature
-
-                  if (isArchived) {
-                    return (
-                      <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                        {t("workers.analyticsArchivedHidden")}
-                      </div>
-                    )
+                    productIds: [],
                   }
 
                   return (
@@ -953,16 +971,28 @@ export default function WorkersPage() {
                               )
                             })()}
                           </div>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="gap-2"
-                            onClick={() => handleDeleteArchive(item.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            {t("workers.analyticsDeleteArchive")}
-                          </Button>
+                          <div className="flex flex-col gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-2"
+                              onClick={() => handleUndoArchive(item.id)}
+                            >
+                              <Undo2 className="h-4 w-4" />
+                              {t("workers.analyticsUndoArchive")}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              className="gap-2"
+                              onClick={() => handleDeleteArchive(item.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              {t("workers.analyticsDeleteArchive")}
+                            </Button>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
