@@ -5,7 +5,7 @@ import { useEffect, useState, Suspense } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { useStore, type ProductStatus } from "@/lib/store"
 import { translations } from "@/lib/i18n"
-import { isSuperRole } from "@/lib/utils"
+import { isSuperRole, addTimelineEvent, getTimeline, type TimelineEvent } from "@/lib/utils"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Search, Filter, Upload, Trash2 } from "lucide-react"
+import { Plus, Search, Filter, Upload, Trash2, Clock } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 type BulkItem = {
@@ -36,8 +36,12 @@ function StockContent() {
   const [stockGroupFilter, setStockGroupFilter] = useState<"all" | "in_stock" | "others">("all")
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
+  const [selectedTimeline, setSelectedTimeline] = useState<TimelineEvent[]>([])
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [assignedFilter, setAssignedFilter] = useState<string>("all")
+  const [workerFilter, setWorkerFilter] = useState<string>("all")
+  const [priceMin, setPriceMin] = useState<string>("")
+  const [priceMax, setPriceMax] = useState<string>("")
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [filterName, setFilterName] = useState("")
@@ -95,7 +99,7 @@ function StockContent() {
       const [{ data: p }, companiesRes, { data: workersData }] = await Promise.all([
         supabase
           .from("products")
-          .select("id, client_name, phone, price, status, company_id, delivery_worker_id, created_at")
+          .select("id, client_name, phone, price, status, company_id, delivery_worker_id, created_at, delivered_at")
           .order("created_at", { ascending: false }),
         fetch("/api/companies/list"),
         supabase.from("delivery_workers").select("id, name"),
@@ -439,11 +443,16 @@ function StockContent() {
   }
 
   const handleStatusChange = async (id: number, status: ProductStatus) => {
+    const prev = products.find((p) => p.id === id)
+    const oldStatus = prev ? normalizeStatus(prev.status) : "in_stock"
     setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)))
     setStoreProducts(
       (storeProducts || []).map((p) => (String(p.id) === String(id) ? { ...p, status } : p)),
     )
-    await supabase.from("products").update({ status }).eq("id", id)
+    addTimelineEvent(String(id), oldStatus, status, "stock")
+    const updateData: Record<string, any> = { status }
+    if (status === "delivered") updateData.delivered_at = new Date().toISOString()
+    await supabase.from("products").update(updateData).eq("id", id)
   }
 
   const handleDeleteProduct = async (id: number) => {
@@ -493,6 +502,11 @@ function StockContent() {
     const isAssigned = Boolean(p.delivery_worker_id)
     const matchesAssigned =
       assignedFilter === "all" || (assignedFilter === "yes" ? isAssigned : !isAssigned)
+    const matchesWorker =
+      workerFilter === "all" || String(p.delivery_worker_id) === workerFilter
+    const price = Number(p.price || 0)
+    const minOk = !priceMin || price >= Number(priceMin)
+    const maxOk = !priceMax || price <= Number(priceMax)
     const createdAt = p.created_at ? new Date(p.created_at) : null
     const fromOk = !dateFrom || (createdAt ? createdAt >= new Date(dateFrom) : false)
     const toOk = !dateTo || (createdAt ? createdAt <= new Date(`${dateTo}T23:59:59`) : false)
@@ -503,6 +517,9 @@ function StockContent() {
       matchesStatus &&
       matchesStockGroup &&
       matchesAssigned &&
+      matchesWorker &&
+      minOk &&
+      maxOk &&
       fromOk &&
       toOk
     )
@@ -546,6 +563,9 @@ function StockContent() {
     setStockGroupFilter("all")
     setStatusFilter("all")
     setAssignedFilter("all")
+    setWorkerFilter("all")
+    setPriceMin("")
+    setPriceMax("")
     setDateFrom("")
     setDateTo("")
     setSelectedSavedFilter("")
@@ -1072,6 +1092,30 @@ function StockContent() {
               </Select>
             </div>
             <div className="grid gap-2">
+              <Label>{t.stock.workerFilter || "Worker"}</Label>
+              <Select value={workerFilter} onValueChange={setWorkerFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t.stock.workerFilter || "Worker"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t.stock.workerAll || "All workers"}</SelectItem>
+                  {workers.map((w) => (
+                    <SelectItem key={w.id} value={String(w.id)}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>{t.stock.priceMin || "Price min"}</Label>
+              <Input type="number" placeholder="0" value={priceMin} onChange={(e) => setPriceMin(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label>{t.stock.priceMax || "Price max"}</Label>
+              <Input type="number" placeholder="∞" value={priceMax} onChange={(e) => setPriceMax(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
               <Label>{t.stock.dateFrom || "From"}</Label>
               <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             </div>
@@ -1144,6 +1188,7 @@ function StockContent() {
                     className="cursor-pointer"
                     onClick={() => {
                       setSelectedProduct(p)
+                      setSelectedTimeline(getTimeline(String(p.id)))
                       setIsDetailsOpen(true)
                     }}
                   >
@@ -1260,6 +1305,34 @@ function StockContent() {
                     </>
                   )}
                 </div>
+
+                {/* Timeline */}
+                {selectedTimeline.length > 0 && (
+                  <div className="pt-3 border-t space-y-2">
+                    <div className="flex items-center gap-2 font-medium text-sm">
+                      <Clock className="h-4 w-4" />
+                      {t.stock.timeline || "Status History"}
+                    </div>
+                    <div className="space-y-1">
+                      {selectedTimeline.map((evt, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs">
+                          <span className="text-muted-foreground w-36 shrink-0">{formatDateTime(evt.at)}</span>
+                          <Badge variant="outline" className="text-xs">{STATUS_LABELS[normalizeStatus(evt.from)] || evt.from}</Badge>
+                          <span className="text-muted-foreground">→</span>
+                          <Badge variant="secondary" className="text-xs">{STATUS_LABELS[normalizeStatus(evt.to)] || evt.to}</Badge>
+                          {evt.by && <span className="text-muted-foreground italic">({evt.by})</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selectedProduct.delivered_at && (
+                  <div className="pt-2 border-t text-xs text-muted-foreground">
+                    {t.stock.deliveredAt || "Delivered at"}: {formatDateTime(selectedProduct.delivered_at)}
+                  </div>
+                )}
+
                 <div className="pt-2 flex justify-end">
                   <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>
                     {t.common.cancel}
