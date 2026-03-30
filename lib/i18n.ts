@@ -165,6 +165,10 @@ export const translations = {
       workerAll: "All workers",
       priceMin: "Price min",
       priceMax: "Price max",
+      phoneSearch: "Phone search",
+      phoneSearchPlaceholder: "Search by phone number...",
+      showPhoneDuplicates: "Phone duplicates",
+      duplicate: "Duplicate",
       table: {
         id: "ID",
         client: "Client",
@@ -544,6 +548,10 @@ export const translations = {
       workerAll: "Tous les livreurs",
       priceMin: "Prix min",
       priceMax: "Prix max",
+      phoneSearch: "Recherche par téléphone",
+      phoneSearchPlaceholder: "Rechercher par numéro de téléphone...",
+      showPhoneDuplicates: "Doublons de téléphone",
+      duplicate: "Doublon",
       table: {
         id: "ID",
         client: "Client",
@@ -903,6 +911,10 @@ export const translations = {
       workerAll: "جميع العمال",
       priceMin: "السعر الأدنى",
       priceMax: "السعر الأقصى",
+      phoneSearch: "البحث بالهاتف",
+      phoneSearchPlaceholder: "ابحث برقم الهاتف...",
+      showPhoneDuplicates: "أرقام هاتف مكررة",
+      duplicate: "مكرر",
       table: {
         id: "المعرف",
         client: "العميل",

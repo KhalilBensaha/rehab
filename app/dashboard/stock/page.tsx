@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Search, Filter, Upload, Trash2, Clock } from "lucide-react"
+import { Plus, Search, Filter, Upload, Trash2, Clock, Copy } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 type BulkItem = {
@@ -47,6 +47,8 @@ function StockContent() {
   const [filterName, setFilterName] = useState("")
   const [savedFilters, setSavedFilters] = useState<any[]>([])
   const [selectedSavedFilter, setSelectedSavedFilter] = useState<string>("")
+  const [phoneSearch, setPhoneSearch] = useState("")
+  const [showPhoneDuplicates, setShowPhoneDuplicates] = useState(false)
 
   const [products, setProducts] = useState<any[]>([])
   const [companies, setCompanies] = useState<any[]>([])
@@ -489,11 +491,32 @@ function StockContent() {
     return duplicates
   })()
 
+  // Phone duplicate detection
+  const phoneCountMap = (() => {
+    const map: Record<string, number> = {}
+    products.forEach((p) => {
+      const phone = (p.phone || "").trim()
+      if (!phone) return
+      map[phone] = (map[phone] || 0) + 1
+    })
+    return map
+  })()
+
+  const duplicatePhones = new Set<string>(
+    Object.entries(phoneCountMap)
+      .filter(([, count]) => count > 1)
+      .map(([phone]) => phone)
+  )
+
   const filteredProducts = products.filter((p) => {
     const matchesCompany = filterCompany === "all" || String(p.company_id) === filterCompany
     const matchesSearch =
-      (p.client_name || "").toLowerCase().includes(search.toLowerCase()) || String(p.id).includes(search)
+      (p.client_name || "").toLowerCase().includes(search.toLowerCase()) ||
+      String(p.id).includes(search) ||
+      (p.phone || "").includes(search)
     const matchesDuplicate = !showDuplicates || duplicateIdSet.has(normalizeId(p.id))
+    const matchesPhoneSearch = !phoneSearch.trim() || (p.phone || "").includes(phoneSearch.trim())
+    const matchesPhoneDuplicate = !showPhoneDuplicates || duplicatePhones.has((p.phone || "").trim())
     const matchesStatus = statusFilter === "all" || normalizeStatus(p.status) === statusFilter
     const normalizedStatus = normalizeStatus(p.status)
     const matchesStockGroup =
@@ -514,6 +537,8 @@ function StockContent() {
       matchesCompany &&
       matchesSearch &&
       matchesDuplicate &&
+      matchesPhoneSearch &&
+      matchesPhoneDuplicate &&
       matchesStatus &&
       matchesStockGroup &&
       matchesAssigned &&
@@ -569,6 +594,8 @@ function StockContent() {
     setDateFrom("")
     setDateTo("")
     setSelectedSavedFilter("")
+    setPhoneSearch("")
+    setShowPhoneDuplicates(false)
   }
 
   const buildCompanyName = (companyId: any) =>
@@ -1125,6 +1152,31 @@ function StockContent() {
             </div>
           </div>
 
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <Label className="mb-2 block">{t.stock.phoneSearch || "Phone search"}</Label>
+              <Input
+                placeholder={t.stock.phoneSearchPlaceholder || "Search by phone number..."}
+                value={phoneSearch}
+                onChange={(e) => setPhoneSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant={showPhoneDuplicates ? "default" : "outline"}
+                className="gap-2"
+                onClick={() => setShowPhoneDuplicates((prev) => !prev)}
+              >
+                <Copy className="h-4 w-4" />
+                {t.stock.showPhoneDuplicates || "Phone duplicates"}
+                {duplicatePhones.size > 0 && (
+                  <Badge variant="secondary" className="ml-1">{duplicatePhones.size}</Badge>
+                )}
+              </Button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="md:col-span-2 grid gap-2">
               <Label>{t.stock.filterName || "Filter name"}</Label>
@@ -1185,7 +1237,7 @@ function StockContent() {
                 filteredProducts.map((p) => (
                   <TableRow
                     key={p.id}
-                    className="cursor-pointer"
+                    className={`cursor-pointer ${duplicatePhones.has((p.phone || "").trim()) && (p.phone || "").trim() ? "bg-amber-50 dark:bg-amber-950/30" : ""}`}
                     onClick={() => {
                       setSelectedProduct(p)
                       setSelectedTimeline(getTimeline(String(p.id)))
@@ -1195,7 +1247,12 @@ function StockContent() {
                     <TableCell className="font-mono text-xs">{p.id}</TableCell>
                     <TableCell>
                       <div className="font-medium">{p.client_name}</div>
-                      <div className="text-xs text-muted-foreground">{p.phone}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {p.phone || "-"}
+                        {duplicatePhones.has((p.phone || "").trim()) && (p.phone || "").trim() && (
+                          <Badge variant="outline" className="ml-2 text-amber-600 border-amber-400">{t.stock.duplicate || "Duplicate"}</Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{companies.find((c) => c.id === p.company_id)?.name || "-"}</TableCell>
                     <TableCell>{Number(p.price || 0).toFixed(2)} {t.common.currency}</TableCell>
